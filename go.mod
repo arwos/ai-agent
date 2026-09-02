@@ -10,7 +10,7 @@ require (
 	github.com/mozillazg/go-unidecode v0.2.0
 	go.osspkg.com/goppy/v3 v3.2.3
 	go.osspkg.com/logx v0.6.1
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -67,7 +67,7 @@ require (
 	go.osspkg.com/routine v0.4.1 // indirect
 	go.osspkg.com/syncing v0.5.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
