@@ -1,0 +1,1 @@
+ALTER TABLE local_llm_settings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0;

@@ -1,0 +1,23 @@
+[Unit]
+Description=arwos-agent
+Documentation=https://arwos-agent.website/
+After=network.target
+
+[Service]
+Type=simple
+
+User=arwos-agent
+Group=arwos-agent
+
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=true
+
+Restart=on-failure
+RestartSec=30s
+ExecStart=/usr/bin/arwos-agent --config=/etc/arwos-agent/config.yaml
+KillMode=process
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

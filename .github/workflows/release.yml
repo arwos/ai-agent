@@ -1,0 +1,91 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26"
+  GO_TAGS: sqlite_fts5
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Build frontend
+        run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
+
+      - name: Build binary and archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          name="arwos-agent-${GOOS}-${GOARCH}"
+          mkdir -p release/package
+          binary="release/package/arwos-agent"
+          if [ "${GOOS}" = "windows" ]; then binary="${binary}.exe"; fi
+          go build -tags "${GO_TAGS}" \
+            -ldflags "-s -w -X github.com/arwos/ai-agent/internal/pkg/version.Value=${VERSION}" \
+            -o "${binary}" ./cmd/arwos-agent
+          cp README.md LICENSE "release/package/" 2>/dev/null || true
+          tar -C release/package -czf "release/${name}.tar.gz" .
+          if [ "${GOOS}" = "windows" ]; then
+            (cd release/package && zip -q -r "../${name}.zip" .)
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arwos-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: arwos-agent-*
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/*

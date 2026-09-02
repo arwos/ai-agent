@@ -1,0 +1,35 @@
+log:
+    level: 3
+    file_path: /dev/stdout
+    format: string
+
+http:
+    - tag: main
+      addr: 127.0.0.1:8080
+
+sqlite:
+    - tags: master
+      file: ./datasource/db/sqlite.db
+      cache: private
+      mode: rwc
+      journal: WAL
+      locking_mode: NORMAL
+      other_params: auto_vacuum=incremental&_busy_timeout=10000
+
+knowledge:
+    folder: ./datasource/knowledge
+    page_size: 10
+    search_limit: 4
+
+skills:
+    folder: ./datasource/skills
+
+dialogs:
+    folder: ./datasource/dialogs
+    history_limit: 100
+
+agent:
+    max_iterations: 8
+
+local_llm:
+    folder: ./datasource/llm

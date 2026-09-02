@@ -1,0 +1,68 @@
+version: "2"
+
+run:
+  go: "1.26"
+  timeout: 5m
+  tests: false
+  issues-exit-code: 1
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+  fix: false
+
+output:
+  formats:
+    text:
+      print-linter-name: true
+      print-issued-lines: true
+
+formatters:
+  exclusions:
+    paths:
+      - vendors/
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -S1023
+        - -ST1000
+        - -ST1003
+        - -ST1020
+    gosec:
+      excludes:
+        - G104
+        - G115
+        - G301
+        - G304
+        - G306
+        - G501
+        - G505
+  exclusions:
+    paths:
+      - vendors/
+  default: none
+  enable:
+    - govet
+    - errcheck
+    - misspell
+    - gocyclo
+    - ineffassign
+    - unparam
+    - unused
+    - prealloc
+    - durationcheck
+    - staticcheck
+    - makezero
+    - nilerr
+    - errorlint
+    - bodyclose
+    - gosec
