@@ -28,7 +28,7 @@
     "recharts": "^2.10.0",
     "remark-gfm": "^4.0.1",
     "unidecode": "^1.1.0",
-    "uuid": "^9.0.1"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
