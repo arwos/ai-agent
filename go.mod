@@ -6,7 +6,7 @@ require (
 	github.com/blevesearch/bleve/v2 v2.6.1
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.2
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.19.2
 	github.com/mozillazg/go-unidecode v0.2.0
 	go.osspkg.com/goppy/v3 v3.2.3
 	go.osspkg.com/logx v0.6.1
