@@ -1,8 +1,9 @@
 name: Release binaries
 
 on:
-  release:
-    types: [ created ]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -21,11 +22,11 @@ jobs:
       matrix:
         include:
           - { goos: linux, goarch: amd64 }
-#          - { goos: linux, goarch: arm64 }
-#          - { goos: darwin, goarch: amd64 }
-#          - { goos: darwin, goarch: arm64 }
-#          - { goos: windows, goarch: amd64 }
-#          - { goos: windows, goarch: arm64 }
+    #          - { goos: linux, goarch: arm64 }
+    #          - { goos: darwin, goarch: amd64 }
+    #          - { goos: darwin, goarch: arm64 }
+    #          - { goos: windows, goarch: amd64 }
+    #          - { goos: windows, goarch: arm64 }
     steps:
       - name: Checkout
         uses: actions/checkout@v4
