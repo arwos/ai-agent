@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const BufferSize = 10 * 1024 * 1024
@@ -40,9 +41,9 @@ func (c *Client) Download(ctx context.Context, url, target string, limit int64, 
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer os.Remove(tmpName) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if err := c.stream(ctx, url, limit, progress, tmp); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -66,17 +67,40 @@ func (c *Client) stream(ctx context.Context, url string, limit int64, progress P
 	if client == nil {
 		client = http.DefaultClient
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, requestErr := client.Do(req)
+		if requestErr != nil {
+			lastErr = requestErr
+		} else if resp.StatusCode == http.StatusOK {
+			reader := &reader{source: io.LimitReader(resp.Body, limit), total: resp.ContentLength, report: progress}
+			_, lastErr = io.CopyBuffer(dst, reader, make([]byte, BufferSize))
+			_ = resp.Body.Close()
+			if lastErr == nil {
+				return nil
+			}
+			// Retrying after a partial copy would append a second, corrupt body to
+			// dst. Callers can retry the whole operation with a fresh destination.
+			return lastErr
+		} else {
+			lastErr = fmt.Errorf("%s: %s", url, resp.Status)
+			_ = resp.Body.Close()
+			if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+				return lastErr
+			}
+		}
+		if attempt == 2 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, resp.Status)
-	}
-	reader := &reader{source: io.LimitReader(resp.Body, limit), total: resp.ContentLength, report: progress}
-	_, err = io.CopyBuffer(dst, reader, make([]byte, BufferSize))
-	return err
+	return lastErr
 }
 
 type reader struct {

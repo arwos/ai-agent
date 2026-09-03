@@ -38,8 +38,9 @@ type BuiltinSettings struct {
 	Tools   []BuiltinToolSetting `json:"tools"`
 }
 type BuiltinToolSetting struct {
-	Name, Alias string `json:"name"`
-	Enabled     bool   `json:"enabled"`
+	Name    string `json:"name"`
+	Alias   string `json:"alias"`
+	Enabled bool   `json:"enabled"`
 }
 
 type Scope struct {

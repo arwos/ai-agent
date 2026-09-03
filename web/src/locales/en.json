@@ -407,12 +407,14 @@
       "search": "Search model",
       "refresh": "Refresh catalog",
       "download": "Download model",
+      "showAll": "Show all models",
       "remove": "Remove model",
       "sortNameAsc": "Name: A–Z",
       "sortNameDesc": "Name: Z–A",
       "sortSizeDesc": "Size: largest",
       "sortSizeAsc": "Size: smallest",
-      "empty": "No installed models yet"
+      "empty": "No installed models yet",
+      "installedTitle": "Installed models"
     },
     "llamaModels": {
       "title": "llama.app models",

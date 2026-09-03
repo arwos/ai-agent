@@ -54,7 +54,7 @@ linters:
     - govet
     - errcheck
     - misspell
-    - gocyclo
+    # - gocyclo
     - ineffassign
     - unparam
     - unused

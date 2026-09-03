@@ -60,11 +60,12 @@ tests:
 
 .PHONY: run-local
 run-local: web-build
-	go run -tags "$(GO_TAGS)" -race cmd/arwos-agent/main.go --config=./config/config.dev.yaml
+	go run -tags "$(GO_TAGS)" -race ./cmd/arwos-agent --config=./config/config.dev.yaml
 
 # Composite commands
 .PHONY: build
 build: web-build
+	mkdir -p ./build
 	CGO_ENABLED=1 go build -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" -o ./build/arwos-agent ./cmd/arwos-agent
 
 .PHONY: pre-commit

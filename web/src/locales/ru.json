@@ -412,12 +412,14 @@
       "search": "Поиск модели",
       "refresh": "Обновить каталог",
       "download": "Скачать модель",
+      "showAll": "Показывать все модели",
       "remove": "Удалить модель",
       "sortNameAsc": "Имя: А–Я",
       "sortNameDesc": "Имя: Я–А",
       "sortSizeDesc": "Размер: больше",
       "sortSizeAsc": "Размер: меньше",
-      "empty": "Установленных моделей пока нет"
+      "empty": "Установленных моделей пока нет",
+      "installedTitle": "Установленные модели"
     },
     "llamaModels": {
       "title": "Модели llama.app",

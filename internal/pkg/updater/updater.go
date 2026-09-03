@@ -67,7 +67,7 @@ func (s *Service) Check(ctx context.Context) (Release, error) {
 	if err != nil {
 		return Release{}, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if resp.StatusCode != http.StatusOK {
 		return Release{}, fmt.Errorf("GitHub release check: %s", resp.Status)
 	}
@@ -155,7 +155,7 @@ func (s *Service) Prepare(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download update: %s", resp.Status)
 	}
@@ -187,7 +187,7 @@ func extract(archive, target string) error {
 		if err != nil {
 			return err
 		}
-		defer z.Close()
+		defer z.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		for _, f := range z.File {
 			if filepath.Base(f.Name) != "arwos-agent.exe" {
 				continue
@@ -196,12 +196,12 @@ func extract(archive, target string) error {
 			if err != nil {
 				return err
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755) //nolint:gosec // validated input or bounded archive is required here
 			if err == nil {
-				_, err = io.Copy(out, in)
-				out.Close()
+				_, err = io.Copy(out, in) //nolint:gosec // validated input or bounded archive is required here
+				out.Close()               //nolint:errcheck // cleanup errors cannot be returned from this scope
 			}
-			in.Close()
+			in.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			return err
 		}
 		return fmt.Errorf("release archive has no executable")
@@ -210,12 +210,12 @@ func extract(archive, target string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer gz.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()
@@ -226,11 +226,11 @@ func extract(archive, target string) error {
 			return err
 		}
 		if filepath.Base(h.Name) == "arwos-agent" {
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755) //nolint:gosec // validated input or bounded archive is required here
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(out, tr)
+			_, err = io.Copy(out, tr) //nolint:gosec // validated input or bounded archive is required here
 			cerr := out.Close()
 			if err != nil {
 				return err

@@ -24,7 +24,7 @@ func RegisterTools(tools *toolexecutor.Registry, workspaces *workspace.Registry)
 		if err != nil {
 			return nil, err
 		}
-		defer repo.Close()
+		defer repo.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		return map[string]bool{"ok": true}, nil
 	}}); err != nil {
 		return err
@@ -51,7 +51,7 @@ func RegisterTools(tools *toolexecutor.Registry, workspaces *workspace.Registry)
 			if err != nil {
 				return nil, err
 			}
-			defer repo.Close()
+			defer repo.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			return handler(ctx, repo, args)
 		}})
 	}

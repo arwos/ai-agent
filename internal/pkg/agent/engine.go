@@ -46,7 +46,7 @@ type Engine struct {
 	streamedResponse bool
 }
 
-func (e *Engine) Run(ctx context.Context, id, prompt string) (result string, usage llm.Usage, err error) {
+func (e *Engine) Run(ctx context.Context, id, prompt string) (result string, usage llm.Usage, err error) { //nolint:gocyclo // agent execution loop
 	e.streamedResponse = false
 	msgs := make([]llm.Message, 0, 8)
 	// OpenAI-compatible chat templates (including Ollama's) require every
@@ -54,7 +54,7 @@ func (e *Engine) Run(ctx context.Context, id, prompt string) (result string, usa
 	// SystemPrompt; keep the optional workspace AGENTS.md context immediately
 	// after it, before persisted history.
 	if strings.TrimSpace(e.SystemContext) != "" {
-		msgs = append(msgs, llm.Message{Role: "system", Content: e.SystemContext})
+		msgs = append(msgs, llm.Message{Role: "system", Content: prompts.CompactText(e.SystemContext)})
 	}
 	if e.Store != nil {
 		history, historyErr := e.Store.History(id, 0)
@@ -311,6 +311,7 @@ func (e *Engine) mainChatCompletion(ctx context.Context, messages []llm.Message,
 			systemPrompt += prompts.TextToolInstructions(items)
 		}
 	}
+	systemPrompt = prompts.CompactText(systemPrompt)
 	call := func(provider llm.Provider) (llm.Response, error) {
 		if streamProvider, ok := provider.(llm.StreamProvider); ok && stream {
 			e.streamedResponse = true
@@ -330,6 +331,36 @@ func (e *Engine) mainChatCompletion(ctx context.Context, messages []llm.Message,
 		return provider.ChatCompletion(ctx, systemPrompt, messages, stream)
 	}
 	r, err := call(e.Provider)
+	if err != nil && isIncompleteToolCallError(err) {
+		// Some local models emit the tool arguments followed by an incomplete
+		// special token. Do not expose that protocol error to the user: give the
+		// model a private correction turn and let it resend a structured call.
+		retryMessages := append(append([]llm.Message(nil), messages...), llm.Message{
+			Role:    "user",
+			Content: "Your previous tool call was incomplete because it did not include a tool name. Retry now using a valid native tool call with the exact tool name and arguments. Do not answer with prose.",
+		})
+		r, err = callWithMessages(e.Provider, ctx, systemPrompt, retryMessages, stream, tools, e.ToolDefinitions, func(delta llm.StreamDelta) error {
+			if delta.Reasoning != "" {
+				e.reportReasoning(llm.Response{Reasoning: delta.Reasoning})
+			}
+			if delta.Content != "" && e.OnChunk != nil {
+				e.OnChunk(delta.Content)
+			}
+			return nil
+		})
+		if err != nil && isIncompleteToolCallError(err) {
+			retryMessages = append(retryMessages, llm.Message{Role: "user", Content: "The previous retry still omitted the tool name. Call one exact tool now; do not emit a JSON object without the tool field."})
+			r, err = callWithMessages(e.Provider, ctx, systemPrompt, retryMessages, stream, tools, e.ToolDefinitions, func(delta llm.StreamDelta) error {
+				if delta.Reasoning != "" {
+					e.reportReasoning(llm.Response{Reasoning: delta.Reasoning})
+				}
+				if delta.Content != "" && e.OnChunk != nil {
+					e.OnChunk(delta.Content)
+				}
+				return nil
+			})
+		}
+	}
 	if err != nil && tools && strings.Contains(strings.ToLower(err.Error()), "does not support tools") {
 		// Some models reject the request before producing a response. Retry the
 		// same model without native tool schemas; textual tool-call parsing may
@@ -345,6 +376,20 @@ func (e *Engine) mainChatCompletion(ctx context.Context, messages []llm.Message,
 		return r, nil
 	}
 	return r, err
+}
+
+func isIncompleteToolCallError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "incomplete tool call")
+}
+
+func callWithMessages(provider llm.Provider, ctx context.Context, system string, messages []llm.Message, stream, tools bool, definitions []llm.ToolDefinition, emit func(llm.StreamDelta) error) (llm.Response, error) {
+	if streamProvider, ok := provider.(llm.StreamProvider); ok && stream {
+		return streamProvider.ChatCompletionStream(ctx, system, messages, tools, definitions, emit)
+	}
+	if withTools, ok := provider.(llm.ToolsProvider); ok && tools && len(definitions) > 0 {
+		return withTools.ChatCompletionWithTools(ctx, system, messages, stream, definitions)
+	}
+	return provider.ChatCompletion(ctx, system, messages, stream)
 }
 
 func (e *Engine) toolChatCompletion(ctx context.Context, messages []llm.Message) (llm.Response, error) {

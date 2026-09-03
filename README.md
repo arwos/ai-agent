@@ -50,8 +50,27 @@ git clone https://github.com/arwos/ai-agent.git
 cd agent
 make web-install
 make build
-./build/arwos-agent --config=./config/config.dev.yaml --config-recovery
+./build/arwos-agent --config=./build/config.yaml --config-recovery
 ```
+
+The binary contains the default contents of `config/config.dev.yaml`. During
+`make build` the same file is also placed beside the binary as `build/config.yaml`.
+The service can install itself as a per-user systemd service (without root):
+
+```sh
+./build/arwos-agent install-as-service
+```
+
+Удаление службы:
+
+```sh
+./build/arwos-agent uninstall-as-service
+```
+
+The command detects the binary location, creates the neighboring `config.yaml`
+from the embedded default if it does not exist, and starts it with
+`--config=<path>`. Check it with
+`systemctl --user status arwos-agent.service`.
 
 Open <http://127.0.0.1:8080>.
 

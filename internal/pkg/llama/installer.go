@@ -74,12 +74,12 @@ func (s *Service) RefreshModels(ctx context.Context) ([]CatalogModel, error) {
 			return nil, err
 		}
 		body, readErr := utils.ReadAllResponse(resp.Body)
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		if readErr != nil {
 			return nil, readErr
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Hugging Face models: %s", resp.Status)
+			return nil, fmt.Errorf("hugging face models: %s", resp.Status)
 		}
 		var page []struct {
 			ID        string `json:"id"`
@@ -110,29 +110,32 @@ func (s *Service) RefreshModels(ctx context.Context) ([]CatalogModel, error) {
 	return items, nil
 }
 
-func (s *Service) List(ctx context.Context, settings models.LocalLLMSettings) ([]InstalledModel, error) {
-	output, err := s.command(ctx, settings, "cli", "--cache-list")
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) List(_ context.Context, settings models.LocalLLMSettings) ([]InstalledModel, error) {
 	cacheRoot, err := s.cacheRoot(settings)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]InstalledModel, 0)
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasSuffix(fields[0], ".") {
+	entries, err := os.ReadDir(cacheRoot)
+	if os.IsNotExist(err) {
+		return []InstalledModel{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]InstalledModel, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "models--") {
 			continue
 		}
-		id := fields[1]
-		size := int64(0)
-		cacheDir := filepath.Join(cacheRoot, "models--"+strings.ReplaceAll(id, "/", "--"))
-		if stat, statErr := os.Stat(cacheDir); statErr == nil && stat.IsDir() {
-			size, err = directorySize(cacheDir)
-			if err != nil {
-				return nil, err
-			}
+		encodedID := strings.TrimPrefix(entry.Name(), "models--")
+		parts := strings.SplitN(encodedID, "--", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		id := parts[0] + "/" + parts[1]
+		size, sizeErr := directorySize(filepath.Join(cacheRoot, entry.Name()))
+		if sizeErr != nil {
+			return nil, sizeErr
 		}
 		items = append(items, InstalledModel{ID: id, Size: size})
 	}
@@ -147,8 +150,25 @@ func (s *Service) Pull(ctx context.Context, settings models.LocalLLMSettings, mo
 	// The CLI treats a zero prediction limit inconsistently across versions
 	// (some builds interpret -n 0 as unlimited). Generate one token with a
 	// non-empty prompt so the process exits after the model has been cached.
-	_, err := s.command(ctx, settings, "cli", "-hf", modelID, "-n", "1", "-p", "ok", "--single-turn")
-	return err
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		_, err = s.command(ctx, settings, "cli", "-hf", modelID, "-n", "1", "-p", "ok", "--single-turn")
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		delay := time.Duration(attempt+1) * 2 * time.Second
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return fmt.Errorf("download model %q after retries: %w", modelID, err)
 }
 
 func (s *Service) Remove(ctx context.Context, settings models.LocalLLMSettings, modelID string) error {
@@ -183,7 +203,7 @@ func (s *Service) Start(ctx context.Context, settings models.LocalLLMSettings) (
 		return nil, err
 	}
 	args := append([]string{"serve"}, settings.LaunchArgs...)
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
 	}
@@ -236,7 +256,7 @@ func (s *Service) command(ctx context.Context, settings models.LocalLLMSettings,
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	cmd.Dir = filepath.Dir(binaryPath)
 	cmd.Env = s.environment(settings, modelsPath)
 	output, err := cmd.CombinedOutput()
@@ -259,7 +279,9 @@ func nextPage(value string) string {
 }
 
 func validModelID(value string) bool {
-	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$`).MatchString(value)
+	// Hugging Face IDs may include a revision/quantization tag. Keep the
+	// namespace separator mandatory and reject path separators/traversal.
+	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@+-]*/[A-Za-z0-9][A-Za-z0-9._:@+-]*$`).MatchString(value)
 }
 
 func directorySize(root string) (int64, error) {
@@ -289,10 +311,7 @@ func (s *Service) Install(ctx context.Context, progress Progress) (string, error
 	if err != nil {
 		return "", err
 	}
-	progress("removing")
-	if err := os.RemoveAll(s.root); err != nil {
-		return "", err
-	}
+	progress("preparing")
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return "", err
 	}
@@ -300,7 +319,7 @@ func (s *Service) Install(ctx context.Context, progress Progress) (string, error
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(workDir)
+	defer os.RemoveAll(workDir) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	progress("checking")
 	version, err := s.latest(ctx)
 	if err != nil {
@@ -423,13 +442,13 @@ func (s *Service) downloadBinary(ctx context.Context, version, asset, target str
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer os.Remove(tmpName) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if _, err = tmp.Write(data); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		return err
 	}
 	if err = tmp.Chmod(0755); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		return err
 	}
 	if err = tmp.Close(); err != nil {

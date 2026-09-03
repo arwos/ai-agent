@@ -44,7 +44,7 @@ type App struct {
 	store          *configstore.Store
 	workspaces     *workspace.Registry
 	picker         *workspace.Picker
-	skills         skills.Service
+	skills         *skills.Service
 	dialogs        *dialog.Store
 	memory         *dialog.MemoryStore
 	dialogRegistry *dialog.Registry
@@ -156,7 +156,7 @@ func NewApp(
 		store:          store,
 		workspaces:     workspaces,
 		picker:         picker,
-		skills:         *skillsService,
+		skills:         skillsService,
 		dialogs:        dialogs,
 		memory:         dialog.NewMemoryStore(dialogs.Root),
 		dialogRegistry: dialogRegistry,
@@ -238,7 +238,7 @@ type chatWebSocketInput struct {
 	Value          any      `json:"value"`
 }
 
-func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error {
+func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolint:gocyclo // transport protocol dispatch
 	var input chatWebSocketInput
 	if err := ev.Decode(&input); err != nil {
 		logx.Error("websocket request decode failed", "event_id", ev.ID(), "err", err)
@@ -599,7 +599,19 @@ func (a *App) restartConfiguredLocalLLM(settings models.LocalLLMSettings) {
 		logx.Error("local LLM restart skipped; binary is unavailable", "runtime", settings.Runtime, "path", settings.BinaryPath, "err", err)
 		return
 	}
-	a.startLocalLLMSupervisor(settings)
+	// llama.app needs a short amount of time to close its HTTP listener after
+	// cancellation. Starting immediately races with socket cleanup and causes
+	// intermittent "couldn't bind HTTP server socket" failures.
+	go func() {
+		timer := time.NewTimer(750 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-root.Done():
+			return
+		case <-timer.C:
+			a.startLocalLLMSupervisor(settings)
+		}
+	}()
 }
 
 func (a *App) startConfiguredLocalLLM(parent context.Context, runtime string) error {

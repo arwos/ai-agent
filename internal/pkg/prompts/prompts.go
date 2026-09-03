@@ -22,7 +22,7 @@ const (
 	CompactionRequest          = "Summarize this conversation into durable context for its next model request. Return only JSON: {\"title\":\"short session title\",\"summary\":\"Markdown summary\",\"topics\":[\"plain topic string\"],\"notes\":[{\"title\":\"durable fact\",\"content\":\"Markdown note\",\"tags\":[\"tag\"]}],\"topicMemories\":[{\"title\":\"topic\",\"summary\":\"Markdown topic summary\",\"tags\":[\"tag\"]}]}. `topics` must be an array of plain strings, never objects. Do not invent details or fill gaps with generic project descriptions. Keep exact names, relative paths, commands, configuration values, API contracts, tool findings, decisions, constraints, unresolved questions, and user preferences only when they are explicitly present. Write every persisted title, summary, topic, note, and tag in English. Use Markdown headings and lists where they improve readability. Add at most 3 notes and 3 topic memories; use empty arrays when nothing should be saved. The selected compaction level below defines the required amount of detail."
 	GoalPlanningSystem         = "You create a concise execution plan for a workspace agent. Return only valid JSON. Do not claim that any work has already happened. Keep the title and task labels in the language of the user's request."
 	GoalVerification           = "\n\n## Goal verification\nThe user declined the completion confirmation. Re-check every executable goal step with its associated tools. Do not assume a previous result is still valid. Only provide a final answer after verification."
-	ToolCallInstructions       = "\n\n## Available tools\n\nYou can call tools with JSON. To call a tool, output **only one** syntactically valid JSON object, without prose, Markdown fences, trailing commas, or escaped characters in tool names:\n\n```json\n{\n  \"tool\": \"tool_name\",\n  \"arguments\": {\n    \"param1\": \"value1\"\n  }\n}\n```\n\nPut every parameter inside `arguments`; do not add parameters beside it. Call one tool, wait for its result, then call the next tool if needed. Use the exact tool name from the list. The `arguments` field must conform to that tool's JSON Schema."
+	ToolCallInstructions       = "\n\n## Available tools\n\nYou MUST use an available tool whenever the user's request requires an operation that tool can perform. Do not merely describe the operation, provide instructions for it, or claim that it was completed: actually call the tool and wait for its result. To call a tool, output **only one** syntactically valid JSON object, without prose, Markdown fences, trailing commas, or escaped characters in tool names:\n\n```json\n{\n  \"tool\": \"tool_name\",\n  \"arguments\": {\n    \"param1\": \"value1\"\n  }\n}\n```\n\nPut every parameter inside `arguments`; do not add parameters beside it. Call one tool, wait for its result, then call the next tool if needed. Use the exact tool name from the list. The `arguments` field must conform to that tool's JSON Schema."
 	ToolSchemaTemplate         = "\n\n### %s\n%s\n\nArguments schema:\n```json\n%s\n```"
 	MCPInstructionsTemplate    = "\n\n## MCP server %s instructions\n%s"
 	InteractiveToolInstruction = "\n\nIf the user must choose, ask a question, or approve an operation, you MUST call the corresponding user.choice, user.multichoice, user.ask, or user.approval tool. Never present numbered options as prose."
@@ -49,7 +49,7 @@ func TextToolInstructions(tools []struct {
 	if len(tools) == 0 {
 		return ""
 	}
-	out := "\n\n## Tool calling\nIf you need a tool, return one or more JSON objects and no other JSON wrapper. Each object must have this shape:\n{\"tool\":\"name\",\"arguments\":{}}\nAvailable tools:\n"
+	out := "\n\n## Tool calling\nYou MUST call an available tool whenever the user's request requires an operation that tool can perform. Do not describe the operation or claim it is complete without calling the tool. Return one or more JSON objects and no other JSON wrapper. Each object must have this shape:\n{\"tool\":\"name\",\"arguments\":{}}\nAvailable tools:\n"
 	for _, tool := range tools {
 		schema, _ := json.Marshal(tool.Parameters)
 		out += "- " + tool.Name + ": " + tool.Description + "\n  arguments schema: " + string(schema) + "\n"
@@ -64,9 +64,11 @@ func MCPInstructions(name, value string) string {
 	return fmt.Sprintf(MCPInstructionsTemplate, name, value)
 }
 func KnowledgeDocument(title, content string) string {
-	return fmt.Sprintf(KnowledgeDocumentTemplate, title, content)
+	return fmt.Sprintf(KnowledgeDocumentTemplate, title, CompactText(content))
 }
-func Skill(name, content string) string { return fmt.Sprintf(SkillTemplate, name, content) }
+func Skill(name, content string) string {
+	return fmt.Sprintf(SkillTemplate, name, CompactText(content))
+}
 func SkillCatalog(items []string) string {
 	if len(items) == 0 {
 		return ""
@@ -119,7 +121,7 @@ func SessionMemory(title, summary string) string {
 	if strings.TrimSpace(title) == "" {
 		title = "Session memory"
 	}
-	return fmt.Sprintf(SessionMemoryTemplate, title, summary)
+	return fmt.Sprintf(SessionMemoryTemplate, title, CompactText(summary))
 }
 
 // RelevantMemories formats selected file-backed memories for a model prompt.
@@ -134,7 +136,30 @@ func RelevantMemories(items []dialog.RelevantMemory) string {
 		if len(item.Tags) > 0 {
 			tags = fmt.Sprintf(RelevantMemoryTagsTemplate, strings.Join(item.Tags, ", "))
 		}
-		b.WriteString(fmt.Sprintf(RelevantMemoryTemplate, item.Title, tags, item.Content))
+		b.WriteString(fmt.Sprintf(RelevantMemoryTemplate, item.Title, tags, CompactText(item.Content)))
 	}
 	return b.String()
+}
+
+// CompactText removes formatting-only blank lines and trailing whitespace
+// from prose inserted into prompts. Stored source text is never modified.
+func CompactText(value string) string {
+	return value
+	// lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	// result := make([]string, 0, len(lines))
+	// blank := false
+	// for _, line := range lines {
+	// 	line = strings.TrimRight(line, " \t")
+	// 	if strings.TrimSpace(line) == "" {
+	// 		if blank {
+	// 			continue
+	// 		}
+	// 		blank = true
+	// 		result = append(result, "")
+	// 		continue
+	// 	}
+	// 	blank = false
+	// 	result = append(result, line)
+	// }
+	// return strings.TrimSpace(strings.Join(result, "\n"))
 }

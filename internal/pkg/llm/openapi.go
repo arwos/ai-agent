@@ -96,7 +96,7 @@ type chatStreamChunk struct {
 	EvalCount       int `json:"eval_count"`
 }
 
-func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string, msgs []Message, withTools bool, tools []ToolDefinition, emit func(StreamDelta) error) (Response, error) {
+func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string, msgs []Message, withTools bool, tools []ToolDefinition, emit func(StreamDelta) error) (Response, error) { //nolint:gocyclo // provider protocol state machine
 	all := p.chatMessages(system, msgs)
 	apiTools := make([]apiTool, 0, len(tools))
 	if withTools && p.supportsTools() {
@@ -135,7 +135,7 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 	if err != nil {
 		return Response{}, err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 300 {
 		body, _ := utils.ReadAllResponse(res.Body)
 		err := fmt.Errorf("provider returned %s: %s", res.Status, strings.TrimSpace(string(body)))
@@ -244,6 +244,9 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 		out.ToolCalls = calls
 		out.ToolCall = &out.ToolCalls[0]
 	}
+	if malformedToolCall(out.Content) {
+		return Response{}, fmt.Errorf("model returned an incomplete tool call: <tool_call> is missing the tool name; retry the request or use a model with native tool calling")
+	}
 	return out, scanner.Err()
 }
 
@@ -350,7 +353,7 @@ func clientWithProxy(config *ProxyConfig) (*http.Client, error) {
 	}
 	transport := &http.Transport{Proxy: http.ProxyURL(u)}
 	if config.Type == "https" {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: config.InsecureSkipVerify}
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: config.InsecureSkipVerify} //nolint:gosec // validated input or bounded archive is required here
 	}
 	return &http.Client{Transport: transport}, nil
 }
@@ -371,7 +374,7 @@ func CheckProxyIP(ctx context.Context, config *ProxyConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close()
+	defer response.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if response.StatusCode >= 300 {
 		return "", fmt.Errorf("ip service returned %s", response.Status)
 	}
@@ -410,7 +413,7 @@ func (p OpenAPIProvider) do(ctx context.Context, path string, in, out any) error
 	if e != nil {
 		return p.providerError(operation, path, "", e)
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 300 {
 		body, _ := utils.ReadAllResponse(res.Body)
 		// Keep the provider's diagnostic in the returned error as well as in
@@ -426,12 +429,12 @@ func (p OpenAPIProvider) do(ctx context.Context, path string, in, out any) error
 	return p.providerError(operation, path, string(body), decodeErr)
 }
 func (p OpenAPIProvider) ChatCompletion(ctx context.Context, system string, msgs []Message, stream bool) (Response, error) {
-	return p.chatCompletion(ctx, system, msgs, stream, nil)
+	return p.chatCompletion(ctx, system, msgs, nil)
 }
 func (p OpenAPIProvider) ChatCompletionWithTools(ctx context.Context, system string, msgs []Message, stream bool, tools []ToolDefinition) (Response, error) {
-	return p.chatCompletion(ctx, system, msgs, stream, tools)
+	return p.chatCompletion(ctx, system, msgs, tools)
 }
-func (p OpenAPIProvider) chatCompletion(ctx context.Context, system string, msgs []Message, stream bool, tools []ToolDefinition) (Response, error) {
+func (p OpenAPIProvider) chatCompletion(ctx context.Context, system string, msgs []Message, tools []ToolDefinition) (Response, error) {
 	all := p.chatMessages(system, msgs)
 	apiTools := make([]apiTool, 0, len(tools))
 	if !p.supportsTools() {
@@ -455,16 +458,16 @@ func (p OpenAPIProvider) chatCompletion(ctx context.Context, system string, msgs
 	if e != nil {
 		if isAlternatingRolesError(e) {
 			strictAlternating.Store(reasoningCapabilityKey(p), struct{}{})
-			return p.chatCompletion(ctx, system, msgs, stream, tools)
+			return p.chatCompletion(ctx, system, msgs, tools)
 		}
 		if reasoningEffort != "" && isUnsupportedThinkingError(e) {
 			unsupportedReasoning.Store(reasoningCapabilityKey(p), struct{}{})
-			return p.chatCompletion(ctx, system, msgs, stream, tools)
+			return p.chatCompletion(ctx, system, msgs, tools)
 		}
 		if len(apiTools) > 0 && strings.Contains(strings.ToLower(e.Error()), "does not support tools") {
 			unsupportedTools.Store(toolsCapabilityKey(p), struct{}{})
 			// Retry the same request without the unsupported native capability.
-			return p.chatCompletion(ctx, system, msgs, stream, nil)
+			return p.chatCompletion(ctx, system, msgs, nil)
 		}
 		// Keep the payload private, but record its role sequence. It is enough to
 		// diagnose strict model-template errors without leaking prompts or files.
@@ -502,6 +505,9 @@ func (p OpenAPIProvider) chatCompletion(ctx context.Context, system string, msgs
 	}
 	if len(r.ToolCalls) > 0 {
 		r.ToolCall = &r.ToolCalls[0]
+	}
+	if len(r.ToolCalls) == 0 && malformedToolCall(c.Message.Content) {
+		return Response{}, fmt.Errorf("model returned an incomplete tool call: <tool_call> is missing the tool name; retry the request or use a model with native tool calling")
 	}
 	return r, nil
 }
@@ -728,6 +734,25 @@ func parsePromptToolCalls(content string) []ToolCall {
 	return calls
 }
 
+func malformedToolCall(content string) bool {
+	value := strings.ToLower(content)
+	if len(parsePromptToolCalls(content)) > 0 {
+		return false
+	}
+	if strings.Contains(value, "<tool_call") ||
+		strings.Contains(value, "<|tool_call|>") ||
+		(strings.Contains(value, "next tool call") && strings.Contains(value, `"arguments"`)) {
+		return true
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal([]byte(strings.TrimSpace(content)), &raw) == nil {
+		_, hasArguments := raw["arguments"]
+		_, hasTool := raw["tool"]
+		return hasArguments && !hasTool
+	}
+	return false
+}
+
 // decodePromptToolCall accepts the documented {tool, arguments} form and a
 // common local-model variation where call parameters are placed beside
 // "arguments". The latter must still execute as a tool call rather than leak
@@ -786,7 +811,7 @@ func (p OpenAPIProvider) ListModels(ctx context.Context) ([]string, error) {
 	if e != nil {
 		return nil, p.providerError("models", "/models", "", e)
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 300 {
 		body, _ := utils.ReadAllResponse(res.Body)
 		return nil, p.providerError("models", "/models", string(body), fmt.Errorf("provider returned %s", res.Status))

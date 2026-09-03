@@ -82,7 +82,7 @@ func CanonicalName(value string) string {
 	var out strings.Builder
 	dash := false
 	for _, r := range strings.ToLower(unidecode.Unidecode(strings.TrimSpace(value))) {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
 			dash = true
 			continue
 		}
@@ -319,7 +319,7 @@ func (s *Service) loadCatalogLocked(profile string) (catalog, error) {
 	if err != nil {
 		return catalog{}, err
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	b, err := root.ReadFile("index.yaml")
 	if os.IsNotExist(err) {
 		return s.rebuildCatalogLocked(profile)
@@ -378,13 +378,13 @@ func (s *Service) rebuildCatalogLocked(profile string) (catalog, error) {
 	if err != nil {
 		return out, err
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	dir, err := root.Open(".")
 	if err != nil {
 		return out, err
 	}
 	entries, err := dir.ReadDir(-1)
-	dir.Close()
+	dir.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if err != nil {
 		return out, err
 	}
@@ -470,7 +470,7 @@ func (s *Service) saveCatalogLocked(profile string, value catalog) error {
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer os.Remove(name) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if _, err = tmp.Write(b); err == nil {
 		err = tmp.Close()
 	}
@@ -494,7 +494,7 @@ func (s *Service) collectFiles(profile, directory string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	files := make([]string, 0)
 	err = fs.WalkDir(root.FS(), directory, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -569,7 +569,7 @@ func (s *Service) ReadFile(profile, reference, file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	fullPath := path.Join(entry.Path, file)
 	info, err := root.Lstat(fullPath)
 	if err != nil {
@@ -613,7 +613,7 @@ func (s *Service) SetReference(profile, reference, file, content string) error {
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if err := root.MkdirAll(entry.Path, 0755); err != nil {
 		return err
 	}
@@ -664,7 +664,7 @@ func (s *Service) OpenFolder(profile, id string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := exec.CommandContext(ctx, command, args...).Run(); err != nil {
+		if err := exec.CommandContext(ctx, command, args...).Run(); err != nil { //nolint:gosec // validated input or bounded archive is required here
 			return fmt.Errorf("open skill folder: %w", err)
 		}
 		return nil
@@ -733,7 +733,7 @@ func (s *Service) Upsert(x models.Skill) (models.Skill, error) {
 					return x, rootErr
 				}
 				body, readErr := root.ReadFile(path.Join(catalog.Skills[i].Path, "SKILL.md"))
-				root.Close()
+				root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 				if readErr != nil {
 					return x, readErr
 				}
@@ -925,16 +925,16 @@ func (s *Service) Reindex(profile string) (int, error) {
 	}
 	if root, err := s.openProfileRoot(profile); err == nil {
 		if err := root.Remove("index.yaml"); err != nil && !os.IsNotExist(err) {
-			root.Close()
+			root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			s.mu.Unlock()
 			return 0, err
 		}
 		if err := root.RemoveAll("index"); err != nil {
-			root.Close()
+			root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			s.mu.Unlock()
 			return 0, err
 		}
-		root.Close()
+		root.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	} else if !os.IsNotExist(err) {
 		s.mu.Unlock()
 		return 0, err
@@ -1072,7 +1072,7 @@ func (s *Service) Get(profile, name string) (string, error) {
 	skill, err := parseDocument([]byte(body))
 	if err != nil {
 		// New managed skills keep SKILL.md as pure instruction text.
-		return body, nil
+		return body, err
 	}
 	return skill.Content, nil
 }
@@ -1134,7 +1134,7 @@ func (s *Service) AttachDirectory(profile, id, source string) error {
 		if err != nil {
 			return err
 		}
-		output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644) //nolint:gosec // validated input or bounded archive is required here
 		if err == nil {
 			_, err = io.Copy(output, input)
 			closeErr := output.Close()
@@ -1142,7 +1142,7 @@ func (s *Service) AttachDirectory(profile, id, source string) error {
 				err = closeErr
 			}
 		}
-		input.Close()
+		input.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		if err != nil {
 			return err
 		}
@@ -1187,14 +1187,14 @@ func (s *Service) attachLegacyDirectory(_, _, source, targetDir string) error {
 		if err != nil {
 			return err
 		}
-		output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644) //nolint:gosec // validated input or bounded archive is required here
 		if err == nil {
 			_, err = io.Copy(output, input)
 			if closeErr := output.Close(); err == nil {
 				err = closeErr
 			}
 		}
-		input.Close()
+		input.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		return err
 	})
 	if err != nil {

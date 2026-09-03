@@ -7,12 +7,15 @@ package systeminfo
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.osspkg.com/goppy/v3/plugin"
 )
@@ -34,12 +37,22 @@ func WithPlugin() plugin.Kind {
 	return plugin.Kind{Config: &ConfigGroup{}, Inject: func(c *ConfigGroup) *Service { return New(c.LocalLLM.Folder) }}
 }
 
-type Service struct{ root string }
+type Service struct {
+	root   string
+	bootID string
+}
 
-func New(root string) *Service  { return &Service{root: root} }
+func New(root string) *Service {
+	boot := make([]byte, 16)
+	if _, err := rand.Read(boot); err != nil {
+		boot = []byte(strconv.FormatInt(time.Now().UnixNano(), 10))
+	}
+	return &Service{root: root, bootID: hex.EncodeToString(boot)}
+}
 func (s *Service) Root() string { return s.root }
 
 type Info struct {
+	BootID          string  `json:"bootID"`
 	CPUType         string  `json:"cpuType"`
 	CPUFrequencyMHz int     `json:"cpuFrequencyMHz"`
 	CPUCores        int     `json:"cpuCores"`
@@ -61,12 +74,13 @@ type Disk struct {
 }
 
 func (s *Service) Collect(ctx context.Context) Info {
-	out := Info{CPUType: runtime.GOARCH, CPUCores: runtime.NumCPU(), MemoryType: "Unknown", GPUType: "Unknown"}
+	out := Info{BootID: s.bootID, CPUType: runtime.GOARCH, CPUCores: runtime.NumCPU(), MemoryType: "Unknown", GPUType: "Unknown"}
 	out.OllamaInstalled = fileExists(filepath.Join(s.root, "ollama", "ollama"))
 	out.OllamaInstalled = out.OllamaInstalled || fileExists(filepath.Join(s.root, "ollama", "bin", "ollama"))
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		out.OllamaInstalled = fileExists(filepath.Join(s.root, "ollama", "ollama.exe")) || fileExists(filepath.Join(s.root, "ollama", "bin", "ollama.exe"))
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		out.OllamaInstalled = out.OllamaInstalled || fileExists(filepath.Join(s.root, "ollama", "Ollama.dmg"))
 	}
 	out.LlamaInstalled = fileExists(filepath.Join(s.root, "llama", "llama"))

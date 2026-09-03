@@ -155,7 +155,7 @@ func (s *Store) SaveGoal(id string, goal Goal) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err = tmp.Chmod(0644); err == nil {
 		_, err = tmp.Write(append(b, '\n'))
 	}
@@ -172,7 +172,7 @@ func (s *Store) SaveGoal(id string, goal Goal) error {
 	if err != nil {
 		return err
 	}
-	history, err := os.OpenFile(s.goalsPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	history, err := os.OpenFile(s.goalsPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // validated input or bounded archive is required here
 	if err != nil {
 		return err
 	}

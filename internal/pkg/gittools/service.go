@@ -89,7 +89,7 @@ func (r *Repository) Log(ctx context.Context, max int, file string) ([]CommitEnt
 		}
 		commit, err := iter.Next()
 		if err != nil {
-			if err == plumbing.ErrObjectNotFound || err == io.EOF {
+			if errors.Is(err, plumbing.ErrObjectNotFound) || errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, err
@@ -179,7 +179,7 @@ func (r *Repository) indexFile(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer reader.Close()
+	defer reader.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	data, err := io.ReadAll(io.LimitReader(reader, maxDiffBytes+1))
 	if err != nil {
 		return "", err
@@ -211,7 +211,7 @@ func (r *Repository) worktreeFile(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	b, err := io.ReadAll(io.LimitReader(f, maxDiffBytes+1))
 	if err != nil {
 		return "", err
@@ -223,7 +223,7 @@ func (r *Repository) worktreeFile(name string) (string, error) {
 }
 
 func isMissing(err error) bool {
-	return err != nil && (err == os.ErrNotExist || errors.Is(err, os.ErrNotExist))
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func writeLineDiff(out *bytes.Buffer, oldText, newText string) {
@@ -376,7 +376,7 @@ func CreatePullRequest(ctx context.Context, in PullRequestInput) (map[string]any
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
 		return nil, err

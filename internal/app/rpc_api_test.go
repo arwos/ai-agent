@@ -104,7 +104,7 @@ func TestRPCConfigRoundTrip(t *testing.T) {
 	s := configstore.New(database)
 	w := workspace.New()
 	d := dialog.NewStore(t.TempDir())
-	a := &App{settings: map[string]string{}, store: s, workspaces: w, skills: *skills.New("./skills"), dialogs: d, dialogRegistry: dialog.NewRegistry(d), mcpManager: mcp.New(), engines: agent.NewRegistry()}
+	a := &App{settings: map[string]string{}, store: s, workspaces: w, skills: skills.New("./skills"), dialogs: d, dialogRegistry: dialog.NewRegistry(d), mcpManager: mcp.New(), engines: agent.NewRegistry()}
 	setEvent := event.Pool.Get()
 	defer event.Pool.Put(setEvent)
 	if e := setEvent.Encode(map[string]string{"key": "theme", "value": "dark"}); e != nil {
