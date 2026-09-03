@@ -31,7 +31,7 @@ func installAsService() {
 		fatalService("write unit file: %v", err)
 	}
 	for _, args := range [][]string{{"daemon-reload"}, {"enable", "--now", "arwos-agent.service"}} {
-		out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
+		out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput() //nolint:gosec // command and arguments are fixed below
 		if err != nil {
 			fatalService("systemctl: %v: %s", err, strings.TrimSpace(string(out)))
 		}
@@ -46,7 +46,7 @@ func uninstallAsService() {
 	}
 	unitPath := filepath.Join(configDir, "systemd", "user", "arwos-agent.service")
 	for _, args := range [][]string{{"disable", "--now", "arwos-agent.service"}, {"daemon-reload"}} {
-		out, e := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
+		out, e := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput() //nolint:gosec // command and arguments are fixed below
 		if e != nil && args[0] != "disable" {
 			fatalService("systemctl: %v: %s", e, strings.TrimSpace(string(out)))
 		}

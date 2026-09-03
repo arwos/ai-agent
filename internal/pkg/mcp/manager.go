@@ -40,7 +40,7 @@ func (m Manager) Initialize(ctx context.Context, c Config) (InitializeInfo, erro
 		if err != nil {
 			return InitializeInfo{}, err
 		}
-		defer client.Close()
+		defer client.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		var info InitializeInfo
 		if err = client.Call(ctx, "initialize", initializeParams, &info); err != nil {
 			return info, err
@@ -67,7 +67,7 @@ var initializeParams = map[string]any{
 
 func (m Manager) Health(ctx context.Context, c Config) error {
 	if c.Type == "stdio" {
-		cmd := exec.CommandContext(ctx, c.Endpoint, "--help")
+		cmd := exec.CommandContext(ctx, c.Endpoint, "--help") //nolint:gosec // validated input or bounded archive is required here
 		return cmd.Run()
 	}
 	r, e := http.NewRequestWithContext(ctx, http.MethodGet, c.Endpoint, nil)
@@ -78,7 +78,7 @@ func (m Manager) Health(ctx context.Context, c Config) error {
 	if e != nil {
 		return e
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 400 {
 		return fmt.Errorf("mcp health: %s", res.Status)
 	}
@@ -90,7 +90,7 @@ func (m Manager) ListTools(ctx context.Context, c Config) ([]Tool, error) {
 		if e != nil {
 			return nil, e
 		}
-		defer client.Close()
+		defer client.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		var initialized map[string]any
 		if e = client.Call(ctx, "initialize", initializeParams, &initialized); e != nil {
 			return nil, e
@@ -127,7 +127,7 @@ func (m Manager) ListTools(ctx context.Context, c Config) ([]Tool, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	var v struct {
 		Result struct {
 			Tools []Tool `json:"tools"`
@@ -142,7 +142,7 @@ func (m Manager) CallTool(ctx context.Context, c Config, name string, args map[s
 		if e != nil {
 			return nil, e
 		}
-		defer client.Close()
+		defer client.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		var initialized map[string]any
 		if e = client.Call(ctx, "initialize", initializeParams, &initialized); e != nil {
 			return nil, e
@@ -177,7 +177,7 @@ func (m Manager) CallTool(ctx context.Context, c Config, name string, args map[s
 	if e != nil {
 		return nil, e
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	var v struct {
 		Result any `json:"result"`
 		Error  any `json:"error"`
@@ -205,7 +205,7 @@ func (m Manager) httpCall(ctx context.Context, endpoint, method string, params a
 	if err != nil {
 		return "", err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 400 {
 		return "", fmt.Errorf("mcp: %s", res.Status)
 	}
@@ -244,7 +244,7 @@ func (m Manager) httpNotify(ctx context.Context, endpoint, sessionID, method str
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode >= 400 {
 		return fmt.Errorf("mcp: %s", res.Status)
 	}

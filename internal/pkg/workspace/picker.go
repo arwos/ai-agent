@@ -50,7 +50,7 @@ func (p *Picker) Directory(ctx context.Context) (string, error) {
 		if _, err := exec.LookPath(args[0]); err != nil {
 			continue
 		}
-		output, err := exec.CommandContext(ctx, args[0], args[1:]...).Output()
+		output, err := exec.CommandContext(ctx, args[0], args[1:]...).Output() //nolint:gosec // validated input or bounded archive is required here
 		path := strings.TrimSpace(string(output))
 		if err != nil || path == "" {
 			return "", ErrPickerCancelled

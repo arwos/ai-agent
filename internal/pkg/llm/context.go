@@ -63,7 +63,7 @@ func (p OpenAPIProvider) ContextWindow(ctx context.Context) (window int, err err
 	if err != nil {
 		return 0, err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	body, readErr := utils.ReadAllResponse(res.Body)
 	responseBody = string(body)
 	if readErr != nil {

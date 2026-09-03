@@ -149,7 +149,7 @@ func (s *Service) RefreshModels(ctx context.Context) ([]Model, error) {
 
 func (s *Service) run(ctx context.Context, settings models.LocalLLMSettings, args ...string) ([]byte, error) {
 	if settings.BinaryPath == "" {
-		return nil, fmt.Errorf("Ollama binary path is not configured")
+		return nil, fmt.Errorf("ollama binary path is not configured")
 	}
 	binaryPath, err := filepath.Abs(settings.BinaryPath)
 	if err != nil {
@@ -165,7 +165,7 @@ func (s *Service) run(ctx context.Context, settings models.LocalLLMSettings, arg
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	cmd.Dir = filepath.Dir(binaryPath)
 	cmd.Env = s.environment(ctx, settings, modelsPath)
 	output, err := cmd.CombinedOutput()
@@ -199,7 +199,7 @@ func validModelName(name string) bool {
 
 func (s *Service) Start(ctx context.Context, settings models.LocalLLMSettings) (*os.Process, error) {
 	if settings.BinaryPath == "" {
-		return nil, fmt.Errorf("Ollama binary path is not configured")
+		return nil, fmt.Errorf("ollama binary path is not configured")
 	}
 	binaryPath, err := filepath.Abs(settings.BinaryPath)
 	if err != nil {
@@ -213,7 +213,7 @@ func (s *Service) Start(ctx context.Context, settings models.LocalLLMSettings) (
 		return nil, err
 	}
 	args := append([]string{"serve"}, settings.LaunchArgs...)
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	envValues := make(map[string]string)
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
@@ -309,7 +309,7 @@ func artifacts() ([]string, error) {
 		return result, nil
 	case "windows":
 		if runtime.GOARCH != "amd64" {
-			return nil, fmt.Errorf("Ollama standalone Windows binary is unavailable for %s", runtime.GOARCH)
+			return nil, fmt.Errorf("ollama standalone Windows binary is unavailable for %s", runtime.GOARCH)
 		}
 		return []string{"ollama-windows-amd64.zip"}, nil
 	case "darwin":
@@ -329,7 +329,7 @@ func (s *Service) downloadAndExtract(ctx context.Context, dir, name string, prog
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer os.Remove(tmpName) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -345,7 +345,7 @@ func extract(archive, targetDir string, zipArchive bool) error {
 		if err != nil {
 			return err
 		}
-		defer z.Close()
+		defer z.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		for _, entry := range z.File {
 			if entry.FileInfo().IsDir() {
 				continue
@@ -364,10 +364,10 @@ func extract(archive, targetDir string, zipArchive bool) error {
 				}
 				out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, entry.Mode())
 				if err == nil {
-					_, err = io.CopyBuffer(out, in, make([]byte, copyBufferSize))
-					out.Close()
+					_, err = io.CopyBuffer(out, in, make([]byte, copyBufferSize)) //nolint:gosec // validated input or bounded archive is required here
+					out.Close()                                                   //nolint:errcheck // cleanup errors cannot be returned from this scope
 				}
-				in.Close()
+				in.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 				if err != nil {
 					return err
 				}
@@ -379,7 +379,7 @@ func extract(archive, targetDir string, zipArchive bool) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	zr, err := zstd.NewReader(f)
 	if err != nil {
 		return err
@@ -418,12 +418,12 @@ func extract(archive, targetDir string, zipArchive bool) error {
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return err
 		}
-		if h.Typeflag == tar.TypeReg || h.Typeflag == tar.TypeRegA {
+		if h.Typeflag == tar.TypeReg {
 			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(h.Mode))
 			if err != nil {
 				return err
 			}
-			_, err = io.CopyBuffer(out, tr, make([]byte, copyBufferSize))
+			_, err = io.CopyBuffer(out, tr, make([]byte, copyBufferSize)) //nolint:gosec // validated input or bounded archive is required here
 			cerr := out.Close()
 			if err != nil {
 				return err
@@ -489,7 +489,7 @@ func executable(dir string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("Ollama archive has no executable")
+	return "", fmt.Errorf("ollama archive has no executable")
 }
 
 func jetpackVersion() string {

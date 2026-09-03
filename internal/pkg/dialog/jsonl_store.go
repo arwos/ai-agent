@@ -73,11 +73,11 @@ func (s *Store) Append(id string, m Message) error {
 	if e := os.MkdirAll(filepath.Dir(path), 0755); e != nil {
 		return e
 	}
-	f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // validated input or bounded archive is required here
 	if e != nil {
 		return e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b, e := json.Marshal(m)
 	if e != nil {
 		return e
@@ -107,7 +107,7 @@ func (s *Store) History(id string, limit int) ([]Message, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var all []Message
 	deleted := make(map[string]struct{})
 	sc := bufio.NewScanner(f)

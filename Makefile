@@ -60,7 +60,7 @@ tests:
 
 .PHONY: run-local
 run-local: web-build
-	go run -tags "$(GO_TAGS)" -race cmd/arwos-agent/main.go --config=./config/config.dev.yaml
+	go run -tags "$(GO_TAGS)" -race ./cmd/arwos-agent --config=./config/config.dev.yaml
 
 # Composite commands
 .PHONY: build

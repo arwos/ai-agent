@@ -142,7 +142,7 @@ func (s *Store) Upsert(d models.KBDoc) (models.KBDoc, error) {
 		return d, err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer os.Remove(name) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if _, err = tmp.Write(append(b, '\n')); err == nil {
 		err = tmp.Close()
 	}

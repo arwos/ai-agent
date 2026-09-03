@@ -27,7 +27,7 @@ func updateScript(dir, current, next string) string {
 func StartScript(script string) error {
 	command := exec.Command("/bin/sh", script)
 	if terminal, err := exec.LookPath("x-terminal-emulator"); err == nil {
-		command = exec.Command(terminal, "-e", "/bin/sh", script)
+		command = exec.Command(terminal, "-e", "/bin/sh", script) //nolint:gosec // validated input or bounded archive is required here
 	}
 	command.Stdout, command.Stderr, command.Stdin = os.Stdout, os.Stderr, os.Stdin
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

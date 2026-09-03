@@ -156,7 +156,7 @@ func (s *MemoryStore) Save(profileID, workspaceID, dialogID string, memory Memor
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer os.Remove(tmpName) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if err = tmp.Chmod(0644); err == nil {
 		_, err = tmp.Write(append(b, '\n'))
 	}
@@ -274,7 +274,7 @@ func (s *MemoryStore) deleteCollection(profileID, collection, id string) error {
 
 func (s *MemoryStore) Notes(profileID, _ string) ([]LongTermNote, error) {
 	out := make([]LongTermNote, 0)
-	_, err := s.readCollection(profileID, "note", func(b []byte) error {
+	err := s.readCollection(profileID, "note", func(b []byte) error {
 		var x LongTermNote
 		if err := json.Unmarshal(b, &x); err != nil {
 			return err
@@ -309,7 +309,7 @@ func (s *MemoryStore) NotesPage(profileID, cursor string, limit int) (MemoryPage
 
 func (s *MemoryStore) Topics(profileID, _ string) ([]TopicMemory, error) {
 	out := make([]TopicMemory, 0)
-	_, err := s.readCollection(profileID, "topics", func(b []byte) error {
+	err := s.readCollection(profileID, "topics", func(b []byte) error {
 		var x TopicMemory
 		if err := json.Unmarshal(b, &x); err != nil {
 			return err
@@ -484,7 +484,7 @@ func (s *MemoryStore) openMemoryIndex(profileID, collection string) (bleve.Index
 }
 
 func (s *MemoryStore) rebuildMemoryIndex(index bleve.Index, profileID, collection string) error {
-	_, err := s.readCollection(profileID, collection, func(data []byte) error {
+	err := s.readCollection(profileID, collection, func(data []byte) error {
 		var id, title, content string
 		var tags []string
 		if collection == "note" {
@@ -512,7 +512,7 @@ func (s *MemoryStore) indexMemory(profileID, collection, id, title string, tags 
 	if err != nil {
 		return err
 	}
-	defer index.Close()
+	defer index.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	return index.Index(id, map[string]any{"title": title, "tags": tags, "content": content})
 }
 
@@ -521,7 +521,7 @@ func (s *MemoryStore) deleteIndexedMemory(profileID, collection, id string) erro
 	if err != nil {
 		return err
 	}
-	defer index.Close()
+	defer index.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	return index.Delete(id)
 }
 
@@ -551,33 +551,31 @@ func (s *MemoryStore) readIndexedMemory(profileID, collection, id string) (Relev
 	return RelevantMemory{Kind: "topic", ID: topic.ID, Title: topic.Title, Content: topic.Summary, Tags: topic.Tags}, nil
 }
 
-func (s *MemoryStore) readCollection(profileID, collection string, add func([]byte) error) ([]string, error) {
+func (s *MemoryStore) readCollection(profileID, collection string, add func([]byte) error) error {
 	if err := safeMemoryPart(profileID, "profile id"); err != nil {
-		return nil, err
+		return err
 	}
 	dir := filepath.Join(s.CollectionsRoot, profileID, collection)
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var ids []string
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err = add(b); err != nil {
-			return nil, err
+			return err
 		}
-		ids = append(ids, strings.TrimSuffix(entry.Name(), ".json"))
 	}
-	return ids, nil
+	return nil
 }
 
 func (s *MemoryStore) collectionPage(profileID, collection, cursor string, limit int) ([][]byte, string, bool, error) {
@@ -651,7 +649,7 @@ func (s *MemoryStore) saveJSON(path string, value any) error {
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer os.Remove(name) //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if _, err = tmp.Write(append(b, '\n')); err == nil {
 		err = tmp.Close()
 	} else {

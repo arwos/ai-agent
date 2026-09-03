@@ -327,7 +327,7 @@ func (a *App) ollamaStart(ev event.Event, meta ws.Meta) error {
 		}
 		return ev.Encode(map[string]any{"started": true, "pid": process.Pid, "path": settings.BinaryPath})
 	}
-	return fmt.Errorf("Ollama settings are not configured")
+	return fmt.Errorf("ollama settings are not configured")
 }
 
 func (a *App) llamaStart(ev event.Event, meta ws.Meta) error {
@@ -390,9 +390,12 @@ func (a *App) ollamaModelPull(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
+	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "ollama", "status": "starting", "model": request.Name}})
 	if err := a.ollama.Pull(meta.Context(), settings, request.Name); err != nil {
+		a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "ollama", "status": "error", "model": request.Name}})
 		return err
 	}
+	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "ollama", "status": "complete", "model": request.Name}})
 	installed, err := a.ollama.List(meta.Context(), settings)
 	if err != nil {
 		return err
@@ -435,7 +438,7 @@ func (a *App) ollamaSettings() (models.LocalLLMSettings, error) {
 			return item, nil
 		}
 	}
-	return models.LocalLLMSettings{}, fmt.Errorf("Ollama settings are not configured")
+	return models.LocalLLMSettings{}, fmt.Errorf("ollama settings are not configured")
 }
 
 func (a *App) llamaModelsRefresh(ev event.Event, meta ws.Meta) error {
@@ -473,9 +476,12 @@ func (a *App) llamaModelPull(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
+	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "llama", "status": "starting", "model": request.ID}})
 	if err := a.llama.Pull(meta.Context(), settings, request.ID); err != nil {
+		a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "llama", "status": "error", "model": request.ID}})
 		return err
 	}
+	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "llama", "status": "complete", "model": request.ID}})
 	installed, err := a.llama.List(meta.Context(), settings)
 	if err != nil {
 		return err
@@ -504,6 +510,9 @@ func (a *App) llamaModelRemove(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
+	// Router mode discovers cached models at startup, so refresh it after a
+	// model is removed as well as after a model is downloaded.
+	a.restartConfiguredLocalLLM(settings)
 	return ev.Encode(map[string]any{"installed": installed})
 }
 
@@ -533,7 +542,7 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
-func (a *App) settingsExport(ev event.Event, _ ws.Meta) error {
+func (a *App) settingsExport(ev event.Event, _ ws.Meta) error { //nolint:gocyclo // settings serialization dispatch
 	var request struct {
 		Include []string `json:"include"`
 	}
@@ -685,7 +694,7 @@ func (a *App) settingsExport(ev event.Event, _ ws.Meta) error {
 	return ev.Encode(map[string]any{"filename": "arwos-settings.json", "content": string(data)})
 }
 
-func (a *App) settingsImport(ev event.Event, _ ws.Meta) error {
+func (a *App) settingsImport(ev event.Event, _ ws.Meta) error { //nolint:gocyclo // settings deserialization dispatch
 	var q struct {
 		Content string   `json:"content"`
 		Include []string `json:"include"`
@@ -1413,12 +1422,12 @@ func parseGeneratedMemory(content string) generatedMemory {
 	}
 	if err := json.Unmarshal([]byte(clean), &raw); err == nil && strings.TrimSpace(raw.Summary) != "" {
 		memory := generatedMemory{Memory: dialog.Memory{Title: raw.Title, Summary: raw.Summary, Topics: []string{}}, Notes: []dialog.LongTermNote{}, TopicMemories: []dialog.TopicMemory{}}
-		if memory.Memory.Title == "" {
-			memory.Memory.Title = memory.Memory.Summary
+		if memory.Title == "" {
+			memory.Title = memory.Summary
 		}
 		var topics []string
 		if json.Unmarshal(raw.Topics, &topics) == nil {
-			memory.Memory.Topics = topics
+			memory.Topics = topics
 		}
 		var notes []dialog.LongTermNote
 		if json.Unmarshal(raw.Notes, &notes) == nil {
@@ -2148,10 +2157,6 @@ func (a *App) managedSkillsUpsert(ev event.Event, _ ws.Meta) error {
 	_ = json.Unmarshal(payload["dependencies"], &request.Dependencies)
 	_ = json.Unmarshal(payload["dependencyIds"], &request.DependencyIDs)
 	var q models.Skill
-	dependencies := request.Dependencies
-	if len(dependencies) == 0 {
-		dependencies = request.DependencyIDs
-	}
 	if request.ID != "" {
 		profileID, err := a.activeProfile()
 		if err != nil {
@@ -2239,7 +2244,7 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 			if err != nil {
 				return err
 			}
-			defer response.Body.Close()
+			defer response.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			if response.StatusCode < 200 || response.StatusCode >= 300 {
 				return fmt.Errorf("skill archive returned HTTP %d", response.StatusCode)
 			}
@@ -2257,7 +2262,7 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 			if err != nil {
 				return err
 			}
-			defer os.RemoveAll(root)
+			defer os.RemoveAll(root) //nolint:errcheck // cleanup errors cannot be returned from this scope
 			return discoverSkillDirectory(ev, root, "")
 		}
 		// A repository URL is not a skill document. Clone it to a temporary
@@ -2267,8 +2272,8 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 			if err != nil {
 				return err
 			}
-			defer os.RemoveAll(tmp)
-			clone := exec.CommandContext(meta.Context(), "git", "clone", "--depth", "1", q.Ref, tmp)
+			defer os.RemoveAll(tmp)                                                                  //nolint:errcheck // cleanup errors cannot be returned from this scope
+			clone := exec.CommandContext(meta.Context(), "git", "clone", "--depth", "1", q.Ref, tmp) //nolint:gosec // validated input or bounded archive is required here
 			if output, err := clone.CombinedOutput(); err != nil {
 				return fmt.Errorf("clone skill repository: %w: %s", err, strings.TrimSpace(string(output)))
 			}
@@ -2283,7 +2288,7 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 		if err != nil {
 			return err
 		}
-		defer response.Body.Close()
+		defer response.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return fmt.Errorf("skill URL returned HTTP %d", response.StatusCode)
 		}
@@ -2392,8 +2397,8 @@ func (a *App) skillsImportMany(ev event.Event, _ ws.Meta) error {
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(gitRoot)
-		clone := exec.CommandContext(context.Background(), "git", "clone", "--depth", "1", q.Items[0].SourceRef, gitRoot)
+		defer os.RemoveAll(gitRoot)                                                                                       //nolint:errcheck // cleanup errors cannot be returned from this scope
+		clone := exec.CommandContext(context.Background(), "git", "clone", "--depth", "1", q.Items[0].SourceRef, gitRoot) //nolint:gosec // validated input or bounded archive is required here
 		if output, cloneErr := clone.CombinedOutput(); cloneErr != nil {
 			return fmt.Errorf("clone skill repository: %w: %s", cloneErr, strings.TrimSpace(string(output)))
 		}
@@ -2592,7 +2597,7 @@ func extractSkillArchive(data []byte, kind string) (string, error) {
 				return "", err
 			}
 			err = writeFile(file.Name, file.FileInfo().IsDir(), input)
-			input.Close()
+			input.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			if err != nil {
 				return "", err
 			}
@@ -2604,7 +2609,7 @@ func extractSkillArchive(data []byte, kind string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("read gzip skill archive: %w", err)
 			}
-			defer gz.Close()
+			defer gz.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 			reader = gz
 		}
 		tarReader := tar.NewReader(reader)
@@ -2769,7 +2774,7 @@ func (a *App) kbImportLink(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // cleanup errors cannot be returned from this scope
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return fmt.Errorf("document URL returned HTTP %d", res.StatusCode)
 	}
@@ -3639,7 +3644,7 @@ func (a *App) chatSend(ev event.Event, meta ws.Meta) error {
 	return a.runChatSend(q, meta.Context(), meta.ConnectID(), func(value any) error { return ev.Encode(value) })
 }
 
-func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID string, encode func(any) error) error {
+func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID string, encode func(any) error) error { //nolint:gocyclo // chat orchestration state machine
 	startedAt := time.Now()
 	if q.DialogID == "" || (!q.Resume && q.Content == "") {
 		return fmt.Errorf("dialog_id and content are required")
@@ -3939,10 +3944,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 				}
 			}
 		}
-		if result == "" && x == nil {
-			if activeGoal == nil {
-				activeGoal = &dialog.Goal{ID: dialog.NewMessageID(), DialogID: publicDialogID, Goal: goalTitle(q.Content), Status: "running", Tasks: []dialog.GoalTask{}}
-			}
+		if result == "" && x == nil && activeGoal != nil {
 			started := false
 			for index := range activeGoal.Tasks {
 				task := &activeGoal.Tasks[index]
@@ -4177,9 +4179,10 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		if e == nil && completionApproved {
 			activeGoal.Status = "done"
 			for index := range activeGoal.Tasks {
-				if activeGoal.Tasks[index].Status == "running" {
+				switch activeGoal.Tasks[index].Status {
+				case "running":
 					activeGoal.Tasks[index].Status = "done"
-				} else if activeGoal.Tasks[index].Status == "pending" || activeGoal.Tasks[index].Status == "skipped" {
+				case "pending", "skipped":
 					activeGoal.Status = "incomplete"
 				}
 			}
@@ -4687,7 +4690,7 @@ func (a *App) mcpTools(ev event.Event, meta ws.Meta) error {
 	if e := ev.Decode(&q); e != nil {
 		return e
 	}
-	c := mcp.Config{}
+	var c mcp.Config
 	var e error
 	if q.Transport != "" {
 		endpoint := q.URL

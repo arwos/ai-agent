@@ -73,7 +73,7 @@ func (s *Service) ListFiles(dir string) ([]string, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	entries, e := f.ReadDir(-1)
 	if e != nil {
 		return nil, e
@@ -96,7 +96,7 @@ func (s *Service) ListFileInfo(dir string) ([]FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
 		return nil, err
@@ -220,7 +220,7 @@ func (s *Service) Info(name string) (FileInfo, error) {
 	if err != nil {
 		return FileInfo{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return FileInfo{}, err
@@ -292,7 +292,7 @@ func (s *Service) Search(pattern, dir, include string, sensitive bool) ([]map[st
 		}
 		body, e := s.root.ReadFile(name)
 		if e != nil {
-			return nil
+			return e
 		}
 		text := string(body)
 		for lineNo, line := range strings.Split(text, "\n") {

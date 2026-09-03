@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cpu, Download, MemoryStick, Monitor, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, Cpu, Download, MemoryStick, Monitor, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   subscribeFrames,
   WS_EVENT_OLLAMA_MODEL_PULL,
@@ -16,6 +16,7 @@ import { useT } from "../../lib/i18n";
 import { SSelect, SToggle } from "./SkillsProviders";
 
 type SystemInfo = {
+  bootID: string;
   cpuType: string;
   cpuFrequencyMHz: number;
   cpuCores: number;
@@ -62,18 +63,35 @@ export function SystemInfoScreen() {
     llama: { runtime: "llama", enabled: false, binaryPath: "", launchArgs: [], modelsPath: "", env: {} },
   });
   const [savingRuntime, setSavingRuntime] = useState<"ollama" | "llama" | "">("");
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [catalog, setCatalog] = useState<OllamaCatalogModel[]>([]);
   const [installedModels, setInstalledModels] = useState<OllamaInstalledModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [modelsBusy, setModelsBusy] = useState(false);
   const [modelsError, setModelsError] = useState("");
   const [ollamaModelsSort, setOllamaModelsSort] = useState("name-asc");
+  const [showAllOllamaModels, setShowAllOllamaModels] = useState(false);
   const [llamaCatalog, setLlamaCatalog] = useState<LlamaCatalogModel[]>([]);
   const [llamaInstalledModels, setLlamaInstalledModels] = useState<LlamaInstalledModel[]>([]);
   const [selectedLlamaModel, setSelectedLlamaModel] = useState("");
   const [llamaModelsBusy, setLlamaModelsBusy] = useState(false);
   const [llamaModelsError, setLlamaModelsError] = useState("");
+  const [modelInstallStatus, setModelInstallStatus] = useState<{ runtime: "ollama" | "llama"; model: string; status: string } | null>(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("arwos.local-llm.model-install");
+      if (saved) {
+        const parsed = JSON.parse(saved) as { runtime?: string; model?: string; status?: string };
+        if ((parsed.runtime === "ollama" || parsed.runtime === "llama") && parsed.model && parsed.status) {
+          setModelInstallStatus({ runtime: parsed.runtime, model: parsed.model, status: parsed.status });
+        }
+      }
+    } catch {
+      localStorage.removeItem("arwos.local-llm.model-install");
+    }
+  }, []);
   const [llamaModelsSort, setLlamaModelsSort] = useState("name-asc");
+  const [showAllLlamaModels, setShowAllLlamaModels] = useState(false);
   const [activeRuntime, setActiveRuntime] = useState<"ollama" | "llama">("ollama");
   const progressText = (status: string) => {
     if (status.startsWith("downloading:")) {
@@ -103,12 +121,12 @@ export function SystemInfoScreen() {
   const modelOptions = catalog
     .flatMap((model) =>
       model.sizes
-        .filter(modelFitsGPU)
+        .filter((size) => showAllOllamaModels || modelFitsGPU(size))
         .map((size) => ({ value: `${model.name}:${size}`, label: `${model.name}:${size}` })),
     )
     .sort((left, right) => compareModelNames(left.label, right.label));
   const llamaModelOptions = llamaCatalog
-    .filter((model) => llamaModelFitsGPU(model.id))
+    .filter((model) => showAllLlamaModels || llamaModelFitsGPU(model.id))
     .map((model) => ({ value: model.id, label: model.id }))
     .sort((left, right) => compareModelNames(left.label, right.label));
   const loadModels = () =>
@@ -176,6 +194,12 @@ export function SystemInfoScreen() {
     void wsRequest<SystemInfo>(117)
       .then((result) => {
         setInfo(result);
+        const previousBoot = localStorage.getItem("arwos.local-llm.boot-id");
+        if (previousBoot && previousBoot !== result.bootID) {
+          localStorage.removeItem("arwos.local-llm.model-install");
+          setModelInstallStatus(null);
+        }
+        localStorage.setItem("arwos.local-llm.boot-id", result.bootID);
         setInstalledPath(result.ollamaInstalled ? "installed" : "");
         setLlamaInstalled(result.llamaInstalled);
       })
@@ -207,6 +231,22 @@ export function SystemInfoScreen() {
   useEffect(
     () =>
       subscribeFrames((frame) => {
+        if (frame.type === "local_llm.model" && typeof frame.status === "string" && typeof frame.model === "string") {
+          if (frame.runtime === "ollama" || frame.runtime === "llama") {
+            const status: { runtime: "ollama" | "llama"; model: string; status: string } = {
+              runtime: frame.runtime,
+              model: frame.model,
+              status: frame.status,
+            };
+            setModelInstallStatus(status);
+            if (frame.status === "complete" || frame.status === "error") {
+              localStorage.removeItem("arwos.local-llm.model-install");
+            } else {
+              localStorage.setItem("arwos.local-llm.model-install", JSON.stringify(status));
+            }
+          }
+          return;
+        }
         if (frame.type !== "local_llm.install" || typeof frame.status !== "string") return;
         const match = frame.status.match(/^downloading:.*:(\d+)$/);
         const percent = match ? Number(match[1]) : null;
@@ -430,7 +470,18 @@ export function SystemInfoScreen() {
           return (
             <div key={runtime} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium text-slate-200">{t(`systemInfo.configure.${runtime}`)}</h3>
+                <button
+                  type="button"
+                  onClick={() => setSettingsExpanded((expanded) => !expanded)}
+                  className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-slate-200"
+                  aria-expanded={settingsExpanded}
+                >
+                  <ChevronDown
+                    size={15}
+                    className={`shrink-0 transition-transform ${settingsExpanded ? "rotate-180" : ""}`}
+                  />
+                  {t(`systemInfo.configure.${runtime}`)}
+                </button>
                 <SToggle
                   on={settings.enabled}
                   onChange={(enabled) => {
@@ -452,7 +503,7 @@ export function SystemInfoScreen() {
                   small
                 />
               </div>
-              <div className="space-y-2">
+              {settingsExpanded && <div className="space-y-2">
                 <input
                   value={settings.binaryPath}
                   onChange={(event) =>
@@ -569,7 +620,7 @@ export function SystemInfoScreen() {
                 >
                   {savingRuntime === runtime ? t("systemInfo.saving") : t("systemInfo.save")}
                 </button>
-              </div>
+              </div>}
             </div>
           );
         })}
@@ -588,6 +639,10 @@ export function SystemInfoScreen() {
                   maxVisible={4}
                 />
               </div>
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400">
+                <SToggle on={showAllOllamaModels} onChange={setShowAllOllamaModels} small />
+                {t("systemInfo.models.showAll")}
+              </label>
               <button
                 type="button"
                 title={t("systemInfo.models.refresh")}
@@ -642,6 +697,12 @@ export function SystemInfoScreen() {
               {modelsError}
             </div>
           )}
+          {modelInstallStatus?.runtime === "ollama" && modelInstallStatus.status === "starting" && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-cyan-300">
+              <RefreshCw size={13} className="animate-spin" /> {t("systemInfo.installing")} {modelInstallStatus.model}
+            </div>
+          )}
+          <div className="mt-3 text-[10px] uppercase tracking-wider text-slate-500">{t("systemInfo.models.installedTitle")}</div>
           <div className="mt-3 space-y-1">
             {sortedOllamaModels.length ? (
               sortedOllamaModels.map((model) => (
@@ -703,6 +764,10 @@ export function SystemInfoScreen() {
                   maxVisible={4}
                 />
               </div>
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400">
+                <SToggle on={showAllLlamaModels} onChange={setShowAllLlamaModels} small />
+                {t("systemInfo.models.showAll")}
+              </label>
               <button
                 type="button"
                 title={t("systemInfo.llamaModels.refresh")}
@@ -761,6 +826,12 @@ export function SystemInfoScreen() {
               {llamaModelsError}
             </div>
           )}
+          {modelInstallStatus?.runtime === "llama" && modelInstallStatus.status === "starting" && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-violet-300">
+              <RefreshCw size={13} className="animate-spin" /> {t("systemInfo.installingLlama")} {modelInstallStatus.model}
+            </div>
+          )}
+          <div className="mt-3 text-[10px] uppercase tracking-wider text-slate-500">{t("systemInfo.models.installedTitle")}</div>
           <div className="mt-3 space-y-1">
             {sortedLlamaModels.length ? (
               sortedLlamaModels.map((model) => (
