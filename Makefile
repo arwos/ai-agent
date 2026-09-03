@@ -65,6 +65,7 @@ run-local: web-build
 # Composite commands
 .PHONY: build
 build: web-build
+	mkdir -p ./build
 	CGO_ENABLED=1 go build -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" -o ./build/arwos-agent ./cmd/arwos-agent
 
 .PHONY: pre-commit

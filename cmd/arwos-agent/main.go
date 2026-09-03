@@ -6,7 +6,11 @@
 package main
 
 import (
+	"context"
+
 	"go.osspkg.com/goppy/v3"
+	"go.osspkg.com/goppy/v3/pkg/console"
+	"go.osspkg.com/goppy/v3/plugin"
 	"go.osspkg.com/goppy/v3/plugins/orm"
 	"go.osspkg.com/goppy/v3/plugins/orm/clients/sqlite"
 	"go.osspkg.com/goppy/v3/plugins/web"
@@ -24,6 +28,10 @@ func main() {
 	// Specify the path to the config via the argument: `--config`.
 	// Specify the path to the pidfile via the argument: `--pid`.
 	svc := goppy.New("arwos-agent", Version, "Arwos AI Agent")
+	svc.Command(func(_ context.Context, _ plugin.DIResolver, setter console.CommandSetter) {
+		setter.Setup("install-as-service", "Install a systemd user service")
+		setter.ExecFunc(installAsService)
+	})
 	svc.Plugins(
 		web.WithServer(),
 		ws.WithServer(),
