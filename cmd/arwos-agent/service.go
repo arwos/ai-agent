@@ -10,3 +10,7 @@ package main
 func installAsService() {
 	fatalService("service installation is not supported on this operating system")
 }
+
+func uninstallAsService() {
+	fatalService("service installation is not supported on this operating system")
+}

@@ -39,4 +39,22 @@ func installAsService() {
 	fmt.Printf("Installed and started %s\n", unitPath)
 }
 
+func uninstallAsService() {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		fatalService("find user config directory: %v", err)
+	}
+	unitPath := filepath.Join(configDir, "systemd", "user", "arwos-agent.service")
+	for _, args := range [][]string{{"disable", "--now", "arwos-agent.service"}, {"daemon-reload"}} {
+		out, e := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
+		if e != nil && args[0] != "disable" {
+			fatalService("systemctl: %v: %s", e, strings.TrimSpace(string(out)))
+		}
+	}
+	if err = os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		fatalService("remove unit file: %v", err)
+	}
+	fmt.Printf("Uninstalled %s\n", unitPath)
+}
+
 func executableDir(path string) string { return filepath.Dir(path) }

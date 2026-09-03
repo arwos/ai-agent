@@ -29,8 +29,12 @@ func main() {
 	// Specify the path to the pidfile via the argument: `--pid`.
 	svc := goppy.New("arwos-agent", Version, "Arwos AI Agent")
 	svc.Command(func(_ context.Context, _ plugin.DIResolver, setter console.CommandSetter) {
-		setter.Setup("install-as-service", "Install a systemd user service")
+		setter.Setup("install-as-service", "Install the service")
 		setter.ExecFunc(installAsService)
+	})
+	svc.Command(func(_ context.Context, _ plugin.DIResolver, setter console.CommandSetter) {
+		setter.Setup("uninstall-as-service", "Uninstall the service")
+		setter.ExecFunc(uninstallAsService)
 	})
 	svc.Plugins(
 		web.WithServer(),

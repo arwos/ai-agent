@@ -61,6 +61,12 @@ The service can install itself as a per-user systemd service (without root):
 ./build/arwos-agent install-as-service
 ```
 
+Удаление службы:
+
+```sh
+./build/arwos-agent uninstall-as-service
+```
+
 The command detects the binary location, creates the neighboring `config.yaml`
 from the embedded default if it does not exist, and starts it with
 `--config=<path>`. Check it with

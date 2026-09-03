@@ -42,3 +42,16 @@ func installAsService() {
 	}
 	fmt.Printf("Installed and started %s\n", path)
 }
+
+func uninstallAsService() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fatalService("find home directory: %v", err)
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", "com.arwos.arwos-agent.plist")
+	_ = exec.Command("launchctl", "unload", path).Run()
+	if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+		fatalService("remove plist: %v", err)
+	}
+	fmt.Printf("Uninstalled %s\n", path)
+}

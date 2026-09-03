@@ -24,3 +24,13 @@ func installAsService() {
 	}
 	fmt.Println("Installed and started Windows service ArwosAI")
 }
+
+func uninstallAsService() {
+	if out, err := exec.Command("sc.exe", "stop", "ArwosAI").CombinedOutput(); err != nil {
+		_ = out // The service may already be stopped.
+	}
+	if out, err := exec.Command("sc.exe", "delete", "ArwosAI").CombinedOutput(); err != nil {
+		fatalService("delete Windows service: %v: %s", err, out)
+	}
+	fmt.Println("Uninstalled Windows service ArwosAI")
+}
