@@ -6,9 +6,11 @@
 package llama
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,7 +18,9 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -34,6 +38,10 @@ type Service struct {
 }
 
 type Progress func(string)
+
+var terminalEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+var percentRE = regexp.MustCompile(`([0-9]{1,3})%`)
+var transferredBytesRE = regexp.MustCompile(`(?i)([0-9]+(?:\.[0-9]+)?)\s*(B|KiB|MiB|GiB|KB|MB|GB)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*(B|KiB|MiB|GiB|KB|MB|GB)`)
 
 type CatalogModel struct {
 	ID        string `json:"id"`
@@ -171,6 +179,128 @@ func (s *Service) Pull(ctx context.Context, settings models.LocalLLMSettings, mo
 	return fmt.Errorf("download model %q after retries: %w", modelID, err)
 }
 
+func (s *Service) PullWithProgress(ctx context.Context, settings models.LocalLLMSettings, modelID string, progress Progress) error {
+	if !validModelID(modelID) {
+		return fmt.Errorf("invalid llama.app model ID")
+	}
+	if progress != nil {
+		progress("downloading:" + modelID + ":0")
+	}
+	cacheRoot, _ := s.cacheRoot(settings)
+	expectedSize, _ := s.modelDownloadSize(ctx, modelRepoID(modelID))
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	var monitor sync.WaitGroup
+	if progress != nil && cacheRoot != "" && expectedSize > 0 {
+		cacheDir := filepath.Join(cacheRoot, "models--"+strings.ReplaceAll(modelRepoID(modelID), "/", "--"))
+		monitor.Add(1)
+		go func() {
+			defer monitor.Done()
+			ticker := time.NewTicker(400 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-monitorCtx.Done():
+					return
+				case <-ticker.C:
+					size, sizeErr := directorySize(cacheDir)
+					if sizeErr == nil {
+						percent := int(size * 100 / expectedSize)
+						if percent > 100 {
+							percent = 100
+						}
+						progress(fmt.Sprintf("downloading:%s:%d", modelID, percent))
+					}
+				}
+			}
+		}()
+	}
+	defer func() { stopMonitor(); monitor.Wait() }()
+	_, err := s.commandProgress(ctx, settings, func(line string) {
+		if progress == nil {
+			return
+		}
+		if match := percentRE.FindStringSubmatch(line); len(match) == 2 {
+			progress("downloading:" + modelID + ":" + match[1])
+			return
+		}
+		if percent, ok := transferredBytesPercent(line); ok {
+			progress(fmt.Sprintf("downloading:%s:%d", modelID, percent))
+		}
+	}, "cli", "-hf", modelID, "-n", "1", "-p", "ok", "--single-turn")
+	return err
+}
+
+func (s *Service) modelDownloadSize(ctx context.Context, modelID string) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://huggingface.co/api/models/"+modelID+"?blobs=true", nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := s.client.HTTP.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("Hugging Face model metadata: %s", resp.Status)
+	}
+	body, err := utils.ReadAllResponse(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	var item struct {
+		Siblings []struct {
+			Filename string `json:"rfilename"`
+			Size     int64  `json:"size"`
+		} `json:"siblings"`
+	}
+	if err := json.Unmarshal(body, &item); err != nil {
+		return 0, err
+	}
+	var largest int64
+	for _, sibling := range item.Siblings {
+		if strings.HasSuffix(strings.ToLower(sibling.Filename), ".gguf") && sibling.Size > largest {
+			largest = sibling.Size
+		}
+	}
+	if largest == 0 {
+		return 0, fmt.Errorf("Hugging Face model size is unavailable")
+	}
+	return largest, nil
+}
+
+func transferredBytesPercent(line string) (int, bool) {
+	match := transferredBytesRE.FindStringSubmatch(line)
+	if len(match) != 5 {
+		return 0, false
+	}
+	current, ok := byteSize(match[1], match[2])
+	if !ok {
+		return 0, false
+	}
+	total, ok := byteSize(match[3], match[4])
+	if !ok || total <= 0 {
+		return 0, false
+	}
+	percent := int(current * 100 / total)
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	return percent, true
+}
+
+func byteSize(value, unit string) (float64, bool) {
+	amount, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, false
+	}
+	multipliers := map[string]float64{"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "KIB": 1 << 10, "MIB": 1 << 20, "GIB": 1 << 30}
+	multiplier, ok := multipliers[strings.ToUpper(unit)]
+	return amount * multiplier, ok
+}
+
 func (s *Service) Remove(ctx context.Context, settings models.LocalLLMSettings, modelID string) error {
 	if !validModelID(modelID) {
 		return fmt.Errorf("invalid llama.app model ID")
@@ -179,7 +309,7 @@ func (s *Service) Remove(ctx context.Context, settings models.LocalLLMSettings, 
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(cacheRoot, "models--"+strings.ReplaceAll(modelID, "/", "--"))
+	dir := filepath.Join(cacheRoot, "models--"+strings.ReplaceAll(modelRepoID(modelID), "/", "--"))
 	rel, err := filepath.Rel(cacheRoot, dir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("invalid llama.app model cache path")
@@ -264,6 +394,80 @@ func (s *Service) command(ctx context.Context, settings models.LocalLLMSettings,
 		return nil, fmt.Errorf("llama.app %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+func (s *Service) commandProgress(ctx context.Context, settings models.LocalLLMSettings, progress Progress, args ...string) ([]byte, error) {
+	if settings.BinaryPath == "" {
+		return nil, fmt.Errorf("llama.app binary path is not configured")
+	}
+	binaryPath, err := filepath.Abs(settings.BinaryPath)
+	if err != nil {
+		return nil, err
+	}
+	modelsPath, err := filepath.Abs(settings.ModelsPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(modelsPath, 0755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.root, 0755); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Dir, cmd.Env = filepath.Dir(binaryPath), s.environment(settings, modelsPath)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	lines := make(chan string)
+	read := func(reader io.Reader) {
+		scanner := bufio.NewScanner(reader)
+		scanner.Split(splitTerminalLines)
+		scanner.Buffer(make([]byte, 4<<10), 1<<20)
+		for scanner.Scan() {
+			lines <- strings.TrimSpace(terminalEscape.ReplaceAllString(scanner.Text(), ""))
+		}
+	}
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() { defer readers.Done(); read(stdout) }()
+	go func() { defer readers.Done(); read(stderr) }()
+	go func() { readers.Wait(); close(lines) }()
+	var output strings.Builder
+	for line := range lines {
+		if line == "" {
+			continue
+		}
+		output.WriteString(line)
+		output.WriteByte('\n')
+		if progress != nil {
+			progress(line)
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("llama.app %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(output.String()))
+	}
+	return []byte(output.String()), nil
+}
+
+func splitTerminalLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	for i, value := range data {
+		if value == '\n' || value == '\r' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func nextPage(value string) string {

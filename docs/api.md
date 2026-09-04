@@ -67,6 +67,7 @@ Event `1` is a broadcast stream. Its payload is an object with a UUID `id`, a `t
 | `error` | Chat error with a stable `message_id` when available. |
 | `done` | Completion state, model/provider, token counts, context size, latency, and request-rate data. |
 | `local_llm.install` | Progress/status published while installing a local runtime. |
+| `local_llm.model_pull` | Progress/status published while downloading a local model. |
 
 Event `2` is reserved for the legacy stream input frame and is handled separately from RPC event `75`; browser code should use the shared WebSocket helpers in `web/src/lib/api.ts`.
 

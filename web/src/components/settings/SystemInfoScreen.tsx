@@ -92,6 +92,14 @@ export function SystemInfoScreen() {
   }, []);
   const [llamaModelsSort, setLlamaModelsSort] = useState("name-asc");
   const [showAllLlamaModels, setShowAllLlamaModels] = useState(false);
+  const [ollamaModelStatus, setOllamaModelStatus] = useState("");
+  const [ollamaModelPercent, setOllamaModelPercent] = useState<number | null>(null);
+  const [llamaModelStatus, setLlamaModelStatus] = useState("");
+  const [llamaModelPercent, setLlamaModelPercent] = useState<number | null>(null);
+  const [runtimeSettingsCollapsed, setRuntimeSettingsCollapsed] = useState<Record<"ollama" | "llama", boolean>>({
+    ollama: true,
+    llama: true,
+  });
   const [activeRuntime, setActiveRuntime] = useState<"ollama" | "llama">("ollama");
   const progressText = (status: string) => {
     if (status.startsWith("downloading:")) {
@@ -231,7 +239,8 @@ export function SystemInfoScreen() {
   useEffect(
     () =>
       subscribeFrames((frame) => {
-        if (frame.type === "local_llm.model" && typeof frame.status === "string" && typeof frame.model === "string") {
+        if (typeof frame.status !== "string") return;
+        if (frame.type === "local_llm.model" && typeof frame.model === "string") {
           if (frame.runtime === "ollama" || frame.runtime === "llama") {
             const status: { runtime: "ollama" | "llama"; model: string; status: string } = {
               runtime: frame.runtime,
@@ -247,16 +256,23 @@ export function SystemInfoScreen() {
           }
           return;
         }
-        if (frame.type !== "local_llm.install" || typeof frame.status !== "string") return;
         const match = frame.status.match(/^downloading:.*:(\d+)$/);
         const percent = match ? Number(match[1]) : null;
-        if (frame.runtime === "ollama") {
+        if (frame.type === "local_llm.install" && frame.runtime === "ollama") {
           setOllamaStatus(frame.status);
           setOllamaPercent(percent);
         }
-        if (frame.runtime === "llama") {
+        if (frame.type === "local_llm.install" && frame.runtime === "llama") {
           setLlamaStatus(frame.status);
           setLlamaPercent(percent);
+        }
+        if (frame.type === "local_llm.model_pull" && frame.runtime === "ollama") {
+          setOllamaModelStatus(frame.status);
+          setOllamaModelPercent(percent);
+        }
+        if (frame.type === "local_llm.model_pull" && frame.runtime === "llama") {
+          setLlamaModelStatus(frame.status);
+          setLlamaModelPercent(percent);
         }
       }),
     [],
@@ -467,20 +483,22 @@ export function SystemInfoScreen() {
         {(["ollama", "llama"] as const).map((runtime) => {
           if (runtime !== activeRuntime) return null;
           const settings = llmSettings[runtime];
+          const collapsed = runtimeSettingsCollapsed[runtime];
           return (
             <div key={runtime} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setSettingsExpanded((expanded) => !expanded)}
-                  className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-slate-200"
-                  aria-expanded={settingsExpanded}
+                  onClick={() =>
+                    setRuntimeSettingsCollapsed((current) => ({ ...current, [runtime]: !current[runtime] }))
+                  }
+                  aria-expanded={!collapsed}
+                  className="min-w-0 flex-1 text-left text-sm font-medium text-slate-200 hover:text-cyan-100"
                 >
-                  <ChevronDown
-                    size={15}
-                    className={`shrink-0 transition-transform ${settingsExpanded ? "rotate-180" : ""}`}
-                  />
-                  {t(`systemInfo.configure.${runtime}`)}
+                  <span className="inline-flex items-center gap-1.5">
+                    {t(`systemInfo.configure.${runtime}`)}
+                    <ChevronDown size={15} className={collapsed ? "-rotate-90 transition-transform" : "transition-transform"} />
+                  </span>
                 </button>
                 <SToggle
                   on={settings.enabled}
@@ -503,7 +521,7 @@ export function SystemInfoScreen() {
                   small
                 />
               </div>
-              {settingsExpanded && <div className="space-y-2">
+              {!collapsed && <div className="space-y-2">
                 <input
                   value={settings.binaryPath}
                   onChange={(event) =>
@@ -680,10 +698,16 @@ export function SystemInfoScreen() {
               onClick={() => {
                 setModelsBusy(true);
                 setModelsError("");
+                setOllamaModelStatus("");
+                setOllamaModelPercent(null);
                 void wsRequest<{ installed: OllamaInstalledModel[] }>(WS_EVENT_OLLAMA_MODEL_PULL, {
                   name: selectedModel,
                 })
-                  .then((result) => setInstalledModels(result.installed ?? []))
+                  .then((result) => {
+                    setInstalledModels(result.installed ?? []);
+                    setOllamaModelStatus("");
+                    setOllamaModelPercent(null);
+                  })
                   .catch((error: unknown) => setModelsError(error instanceof Error ? error.message : String(error)))
                   .finally(() => setModelsBusy(false));
               }}
@@ -702,6 +726,16 @@ export function SystemInfoScreen() {
               <RefreshCw size={13} className="animate-spin" /> {t("systemInfo.installing")} {modelInstallStatus.model}
             </div>
           )}
+          {ollamaModelStatus && (
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              <div>{progressText(ollamaModelStatus)}</div>
+              {ollamaModelPercent !== null && (
+                <div className="h-1 overflow-hidden rounded bg-white/10">
+                  <div className="h-full bg-cyan-300" style={{ width: `${ollamaModelPercent}%` }} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-3 text-[10px] uppercase tracking-wider text-slate-500">{t("systemInfo.models.installedTitle")}</div>
           <div className="mt-3 space-y-1">
             {sortedOllamaModels.length ? (
@@ -711,9 +745,15 @@ export function SystemInfoScreen() {
                   className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-xs text-slate-200" title={model.name}>
+                    <a
+                      href={`https://ollama.com/library/${model.name.split("/").map(encodeURIComponent).join("/")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate font-mono text-xs text-slate-200 hover:text-cyan-200 hover:underline"
+                      title={model.name}
+                    >
                       {model.name}
-                    </div>
+                    </a>
                     <div className="text-[10px] text-slate-500">
                       {model.size}
                       {model.modified ? ` · ${model.modified}` : ""}
@@ -807,10 +847,16 @@ export function SystemInfoScreen() {
               onClick={() => {
                 setLlamaModelsBusy(true);
                 setLlamaModelsError("");
+                setLlamaModelStatus("");
+                setLlamaModelPercent(null);
                 void wsRequest<{ installed: LlamaInstalledModel[] }>(WS_EVENT_LLAMA_MODEL_PULL, {
                   id: selectedLlamaModel,
                 })
-                  .then((result) => setLlamaInstalledModels(result.installed ?? []))
+                  .then((result) => {
+                    setLlamaInstalledModels(result.installed ?? []);
+                    setLlamaModelStatus("");
+                    setLlamaModelPercent(null);
+                  })
                   .catch((error: unknown) =>
                     setLlamaModelsError(error instanceof Error ? error.message : String(error)),
                   )
@@ -831,6 +877,16 @@ export function SystemInfoScreen() {
               <RefreshCw size={13} className="animate-spin" /> {t("systemInfo.installingLlama")} {modelInstallStatus.model}
             </div>
           )}
+          {llamaModelStatus && (
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              <div>{progressText(llamaModelStatus)}</div>
+              {llamaModelPercent !== null && (
+                <div className="h-1 overflow-hidden rounded bg-white/10">
+                  <div className="h-full bg-violet-300" style={{ width: `${llamaModelPercent}%` }} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-3 text-[10px] uppercase tracking-wider text-slate-500">{t("systemInfo.models.installedTitle")}</div>
           <div className="mt-3 space-y-1">
             {sortedLlamaModels.length ? (
@@ -840,9 +896,15 @@ export function SystemInfoScreen() {
                   className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-xs text-slate-200" title={model.id}>
+                    <a
+                      href={`https://huggingface.co/${model.id.split(":")[0].split("/").map(encodeURIComponent).join("/")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate font-mono text-xs text-slate-200 hover:text-violet-200 hover:underline"
+                      title={model.id}
+                    >
                       {model.id}
-                    </div>
+                    </a>
                     <div className="text-[10px] text-slate-500">{formatSize(model.size)}</div>
                   </div>
                   <button

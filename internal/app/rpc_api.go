@@ -391,7 +391,9 @@ func (a *App) ollamaModelPull(ev event.Event, meta ws.Meta) error {
 		return err
 	}
 	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "ollama", "status": "starting", "model": request.Name}})
-	if err := a.ollama.Pull(meta.Context(), settings, request.Name); err != nil {
+	if err := a.ollama.PullWithProgress(meta.Context(), settings, request.Name, func(status string) {
+		a.publish(StreamMessage{Type: "local_llm.model_pull", Payload: map[string]string{"runtime": "ollama", "status": status}})
+	}); err != nil {
 		a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "ollama", "status": "error", "model": request.Name}})
 		return err
 	}
@@ -477,7 +479,9 @@ func (a *App) llamaModelPull(ev event.Event, meta ws.Meta) error {
 		return err
 	}
 	a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "llama", "status": "starting", "model": request.ID}})
-	if err := a.llama.Pull(meta.Context(), settings, request.ID); err != nil {
+	if err := a.llama.PullWithProgress(meta.Context(), settings, request.ID, func(status string) {
+		a.publish(StreamMessage{Type: "local_llm.model_pull", Payload: map[string]string{"runtime": "llama", "status": status}})
+	}); err != nil {
 		a.publish(StreamMessage{Type: "local_llm.model", Payload: map[string]string{"runtime": "llama", "status": "error", "model": request.ID}})
 		return err
 	}

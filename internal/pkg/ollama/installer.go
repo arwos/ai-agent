@@ -8,6 +8,7 @@ package ollama
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -31,6 +33,8 @@ type Service struct {
 	client *download.Client
 	root   string
 }
+
+var terminalEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 func (s *Service) Root() string { return s.root }
 
@@ -90,6 +94,18 @@ func (s *Service) Pull(ctx context.Context, settings models.LocalLLMSettings, na
 		return fmt.Errorf("invalid Ollama model name")
 	}
 	_, err := s.run(ctx, settings, "pull", name)
+	return err
+}
+
+func (s *Service) PullWithProgress(ctx context.Context, settings models.LocalLLMSettings, name string, progress func(string)) error {
+	if !validModelName(name) {
+		return fmt.Errorf("invalid Ollama model name")
+	}
+	_, err := s.runProgress(ctx, settings, func(line string) {
+		if match := regexp.MustCompile(`([0-9]{1,3})%`).FindStringSubmatch(line); len(match) == 2 {
+			progress("downloading:" + name + ":" + match[1])
+		}
+	}, "pull", name)
 	return err
 }
 
@@ -173,6 +189,82 @@ func (s *Service) run(ctx context.Context, settings models.LocalLLMSettings, arg
 		return nil, fmt.Errorf("ollama %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+func (s *Service) runProgress(ctx context.Context, settings models.LocalLLMSettings, progress func(string), args ...string) ([]byte, error) {
+	if settings.BinaryPath == "" {
+		return nil, fmt.Errorf("Ollama binary path is not configured")
+	}
+	binaryPath, err := filepath.Abs(settings.BinaryPath)
+	if err != nil {
+		return nil, err
+	}
+	modelsPath, err := filepath.Abs(settings.ModelsPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(modelsPath, 0755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.root, 0755); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Dir, cmd.Env = filepath.Dir(binaryPath), s.environment(ctx, settings, modelsPath)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	var output strings.Builder
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	lines := make(chan string)
+	read := func(reader io.Reader) {
+		scanner := bufio.NewScanner(reader)
+		scanner.Split(splitTerminalLines)
+		scanner.Buffer(make([]byte, 4<<10), 1<<20)
+		for scanner.Scan() {
+			lines <- strings.TrimSpace(terminalEscape.ReplaceAllString(scanner.Text(), ""))
+		}
+	}
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() { defer readers.Done(); read(stdout) }()
+	go func() { defer readers.Done(); read(stderr) }()
+	go func() { readers.Wait(); close(lines) }()
+	for line := range lines {
+		if line == "" {
+			continue
+		}
+		output.WriteString(line)
+		output.WriteByte('\n')
+		if progress != nil {
+			progress(line)
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("ollama %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(output.String()))
+	}
+	return []byte(output.String()), nil
+}
+
+// Ollama updates its terminal progress in-place with carriage returns rather
+// than newlines. Treat both delimiters as complete status updates.
+func splitTerminalLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	for i, value := range data {
+		if value == '\n' || value == '\r' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func (s *Service) environment(ctx context.Context, settings models.LocalLLMSettings, modelsPath string) []string {
