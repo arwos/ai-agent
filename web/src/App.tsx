@@ -1244,6 +1244,10 @@ function Shell() {
     () => (db?.presets ?? []).filter((p) => !p.agentId || p.agentId === activeAgent.id),
     [db, activeAgent.id],
   );
+  const agentSkillGroups = useMemo(
+    () => (db?.skillGroups ?? []).filter((group) => activeAgent.skillGroupIds.includes(group.id)),
+    [db, activeAgent.skillGroupIds],
+  );
   const exportSettings = async (include: string[]) => {
     try {
       const result = await wsRequest<{ filename: string; content: string }>(100, { include });
@@ -1584,7 +1588,7 @@ function Shell() {
                     onSend={(txt, f, s, asGoal) => void sendMessage(txt, f, s, asGoal)}
                     onStop={stopConversation}
                     draft={draft}
-                    skills={db.skills}
+                    skillGroups={agentSkillGroups}
                     presets={agentPresets}
                     mainModels={activeAgent.mainModels}
                     selectedModel={activeConv?.activeModel ?? pendingModel}

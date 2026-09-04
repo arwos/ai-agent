@@ -34,7 +34,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { fmtSize } from "../lib/data";
-import type { LiveAgent, Preset, Skill, WorkspaceFile } from "../lib/data";
+import type { LiveAgent, Preset, SkillGroup, WorkspaceFile } from "../lib/data";
 import { wsRequest } from "../lib/api";
 import type { AgentRequest, BgTask, GoalState } from "../lib/api";
 import { useT } from "../lib/i18n";
@@ -430,7 +430,7 @@ type InputProps = {
   disabled?: boolean;
   onSend: (text: string, files: string[], skillIds: string[], asGoal: boolean) => void;
   draft: { text: string; nonce: number } | null;
-  skills: Skill[];
+  skillGroups: SkillGroup[];
   presets: Preset[];
   mainModels: string[];
   selectedModel: string;
@@ -445,7 +445,7 @@ export function InputBar({
   disabled = false,
   onSend,
   draft,
-  skills,
+  skillGroups,
   presets,
   mainModels,
   selectedModel,
@@ -456,7 +456,7 @@ export function InputBar({
   const { t } = useT();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<string[]>([]);
-  const [skillIds, setSkillIds] = useState<string[]>([]);
+  const [skillGroupIds, setSkillGroupIds] = useState<string[]>([]);
   const [asGoal, setAsGoal] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -496,12 +496,13 @@ export function InputBar({
   const submit = () => {
     const tl = text.trim();
     if ((!tl && files.length === 0) || busy || disabled) return;
+    const skillIds = [...new Set(skillGroups.filter((group) => skillGroupIds.includes(group.id)).flatMap((group) => group.skillIds))];
     onSend(tl, files, skillIds, asGoal);
     setText("");
     setFiles([]);
     // Skill selection belongs to one message only. Do not carry it over to
     // the next prompt after the current message has been submitted.
-    setSkillIds([]);
+    setSkillGroupIds([]);
     setAsGoal(false);
     const el = taRef.current;
     if (el) el.style.height = "auto";
@@ -582,13 +583,13 @@ export function InputBar({
                 setPresetsOpen(false);
                 setModelsOpen(false);
               }}
-              className={`flex h-7 items-center gap-1 rounded-md px-2 text-[10px] transition-colors ${skillsOpen || skillIds.length > 0 ? "bg-violet-400/[0.1] text-violet-200" : "text-slate-500 hover:bg-white/5 hover:text-slate-100"}`}
+              className={`flex h-7 items-center gap-1 rounded-md px-2 text-[10px] transition-colors ${skillsOpen || skillGroupIds.length > 0 ? "bg-violet-400/[0.1] text-violet-200" : "text-slate-500 hover:bg-white/5 hover:text-slate-100"}`}
             >
-              <Zap size={12} className={skillIds.length ? "text-violet-300" : ""} />
+              <Zap size={12} className={skillGroupIds.length ? "text-violet-300" : ""} />
               <span>{t("input.skills")}</span>
-              {skillIds.length > 0 && (
+              {skillGroupIds.length > 0 && (
                 <span className="rounded bg-violet-400/25 px-1 py-px font-mono text-[9px] text-violet-200">
-                  {skillIds.length}
+                  {skillGroupIds.length}
                 </span>
               )}
             </button>
@@ -614,18 +615,17 @@ export function InputBar({
                           {t("input.skillsTitle")}
                         </p>
                         <p className="font-mono text-[9px] text-violet-300/80">
-                          {t("input.skillsApproved", { n: skillIds.length })}
+                          {t("input.skillsApproved", { n: skillGroupIds.length })}
                         </p>
                       </div>
                       <div className="scroll-slim max-h-56 overflow-y-auto">
-                        {skills
-                          .filter((s) => s.userInvocable !== false)
-                          .map((s) => {
-                            const on = skillIds.includes(s.id);
+                        {skillGroups
+                          .map((group) => {
+                            const on = skillGroupIds.includes(group.id);
                             return (
                               <button
-                                key={s.id}
-                                onClick={() => setSkillIds((p) => (on ? p.filter((x) => x !== s.id) : [...p, s.id]))}
+                                key={group.id}
+                                onClick={() => setSkillGroupIds((p) => (on ? p.filter((x) => x !== group.id) : [...p, group.id]))}
                                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors ${on ? "bg-violet-400/[0.1]" : "hover:bg-white/[0.05]"}`}
                               >
                                 <span
@@ -637,15 +637,14 @@ export function InputBar({
                                   <span
                                     className={`block truncate text-[12px] ${on ? "text-slate-100" : "text-slate-300"}`}
                                   >
-                                    {s.name}
+                                    {group.name}
                                   </span>
-                                  <span className="block truncate text-[10px] text-slate-600">{s.description}</span>
+                                  <span className="block truncate text-[10px] text-slate-600">{group.description}</span>
                                 </span>
-                                {!s.enabled && <span className="font-mono text-[8.5px] text-amber-400/80">off</span>}
                               </button>
                             );
                           })}
-                        {skills.length === 0 && <p className="px-3 py-2 text-[11px] text-slate-600">—</p>}
+                        {skillGroups.length === 0 && <p className="px-3 py-2 text-[11px] text-slate-600">—</p>}
                       </div>
                     </div>
                   </motion.div>
@@ -676,7 +675,7 @@ export function InputBar({
           <div className="rounded-[11px] bg-abyss-850/95">
             {/* attachments + skills chips */}
             <AnimatePresence>
-              {(files.length > 0 || skillIds.length > 0) && (
+              {(files.length > 0 || skillGroupIds.length > 0) && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -700,20 +699,20 @@ export function InputBar({
                         </button>
                       </span>
                     ))}
-                    {skillIds.map((id) => {
-                      const s = skills.find((x) => x.id === id);
-                      if (!s) return null;
+                    {skillGroupIds.map((id) => {
+                      const group = skillGroups.find((x) => x.id === id);
+                      if (!group) return null;
                       return (
                         <span
                           key={id}
                           className="flex items-center gap-1.5 rounded-md border border-violet-400/25 bg-violet-400/[0.08] py-1 pl-2 pr-1 font-mono text-[10.5px] text-violet-300"
                         >
                           <Zap size={10} />
-                          <span className="max-w-[140px] truncate">{s.name}</span>
+                          <span className="max-w-[140px] truncate">{group.name}</span>
                           <button
-                            onClick={() => setSkillIds((p) => p.filter((x) => x !== id))}
+                            onClick={() => setSkillGroupIds((p) => p.filter((x) => x !== id))}
                             className="grid h-4 w-4 place-items-center rounded text-violet-400/70 transition-colors hover:bg-white/10 hover:text-rose-300"
-                            aria-label={s.name}
+                            aria-label={group.name}
                           >
                             <X size={10} />
                           </button>

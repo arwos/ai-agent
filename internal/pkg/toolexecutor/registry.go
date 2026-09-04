@@ -52,6 +52,7 @@ type Scope struct {
 	Allowed     map[string]bool
 	MCPCall     func(context.Context, MCPTool, map[string]any) (any, error)
 	Request     func(context.Context, map[string]any) (any, error)
+	GoalUpdate  func(context.Context, map[string]any) (any, error)
 }
 
 type MCPTool struct{ ServerName, ToolName string }
