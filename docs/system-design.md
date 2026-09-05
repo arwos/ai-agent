@@ -96,7 +96,7 @@ Requests use the stable envelope:
 {"e": 75, "d": {"dialog_id": "conversation-1", "content": "Inspect this project"}}
 ```
 
-Event ranges are grouped by domain: configuration `10–11`, profiles `12–16`, agents `17–20`, skills and knowledge `25–40`, conversations and memory `41–55`, workspaces `56–71`, MCP `76–83`, providers `84–93`, proxies `94–99`, settings and system `100–117`, and local LLM runtimes `118–132`.
+Event ranges are grouped by domain: configuration `10–11`, profiles `12–16`, agents `17–20`, skills and knowledge `25–40`, conversations and memory `41–55`, workspaces `56–71`, MCP `76–83`, providers `84–93`, proxies `94–99`, settings and system `100–117`, and local LLM runtimes `118–138`.
 
 The complete public contract is maintained in [docs/api.md](docs/api.md). Event IDs are append-only and clients must not infer IDs from operation names.
 

@@ -40,7 +40,7 @@ Keep `main.go` thin. Modules are constructed with `plugin.Inject` in `internal/p
 The frontend is exclusively in `web/`; Angular is not used. The production build in `web/dist` is embedded by `web/embed.go`.
 
 - Use `web/src/lib/api.ts`: `wsRequest` for RPC, `sendChat` for chat input, and `connectChat` / subscriptions for stream frames. Do not use `fetch` for browser API calls.
-- Requests are `{ "e": eventId, "d": params }`. Keep shared IDs synchronized with `internal/app/api_websocket.go`; event IDs are append-only.
+- Requests are `{ "e": eventId, "d": params }`. Keep shared IDs synchronized with `internal/app/api_events.go`; event IDs are append-only.
 - Event `1` is the broadcast stream and event `2` is stream input. Stream payloads use `dialog_id`; filter frames for the active `convId`/`dialogId`.
 - Wrap dynamic requests in `try/catch/finally`. Add UI models in `web/src/lib/data.ts` and API-facing types in `web/src/lib/api.ts`.
 - Localize all visible text using `useT()` and the ten locale files under `web/src/locales/`: `bn`, `en`, `es`, `fr`, `hi`, `it`, `ko`, `pt`, `ru`, `zh`.
@@ -54,9 +54,9 @@ Use `SModal`, `SField`, `SBtn`, `SToggle`, `ScreenHeader`, and `Row`. Switchable
 
 Register each handler directly with `a.wss.SetEventHandler` in `App.Up`; do not make a string dispatcher or handler map. Transport handlers have `func(event.Event, ws.Meta) error` and should delegate domain behavior to separately named operations where practical. Return explicit parameter, not-found, and internal errors.
 
-Current event ranges: configuration 10–11; profiles 12–16; agents 17–20; presets 21–24; skills/import 25–33; knowledge 34–40; conversations/memory 41–55; workspace/files 56–71; skills/chat 72–75; MCP 76–83; providers 84–93; proxies 94–99; settings/conversation utilities 100–110; skill groups 111–114; update/system 115–117; local Ollama/Llama.cpp 118–132. Consult `docs/api.md` before changing public events.
+Current event ranges: configuration 10–11; profiles 12–16; agents 17–20; presets 21–24; skills/import 25–33; knowledge 34–40; conversations/memory 41–55; workspace/files 56–71; skills/chat 72–75; MCP 76–83; providers 84–93; proxies 94–99; settings/conversation utilities 100–110; skill groups 111–114; update/system 115–117; local Ollama/Llama.cpp 118–138. Consult `docs/api.md` before changing public events.
 
-`chat.send` is event 75. It accepts `dialog_id`, `content`, `workspace_id`, `agentId`, `provider`, `model`, `skills`, `asGoal`, `resume`, and `errorMessageId`. Stream types include `status`, `msg.start`, `reasoning`, `chat_stream`, `chunk`, `tool_call`, `request`, `goal`, `goal.clear`, `error`, `done`, and `local_llm.install`. `done` reports total provider usage, current context size, latency and rate data; never mix total tokens with context size.
+`chat.send` is event 75. It accepts `dialog_id`, `content`, `workspace_id`, `agentId`, `provider`, `model`, `skills`, `asGoal`, `resume`, and `errorMessageId`. Stream types include `status`, `msg.start`, `reasoning`, `chat_stream`, `chunk`, `tool_call`, `request`, `goal`, `goal.update`, `goal.clear`, `bg`, `message.deleted`, `error`, `done`, `local_llm.install`, `local_llm.model`, and `local_llm.model_pull`. `done` reports total provider usage, current context size, latency and rate data; never mix total tokens with context size.
 
 Never return provider API keys, proxy passwords, or MCP headers. Return only identifiers and flags such as `hasApiKey` / `hasPassword`.
 

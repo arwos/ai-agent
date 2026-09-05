@@ -61,7 +61,7 @@ The service can install itself as a per-user systemd service (without root):
 ./build/arwos-agent install-as-service
 ```
 
-Удаление службы:
+To remove the service:
 
 ```sh
 ./build/arwos-agent uninstall-as-service
@@ -162,19 +162,19 @@ datasource/skills/<profileId>/
 
 ## WebSocket API
 
-The frontend does not use REST or HTTP JSON-RPC. Browser requests use numeric event IDs registered in [internal/app/api_websocket.go](internal/app/api_websocket.go):
+The frontend does not use REST or HTTP JSON-RPC. Browser requests use numeric event IDs registered in [internal/app/api_events.go](internal/app/api_events.go):
 
 ```json
 {"e":42,"d":{"id":"conversation-1"}}
 ```
 
-Chat input is sent through event `2`:
+The current frontend sends chat input and interaction responses through the legacy stream-input event `2`:
 
 ```json
 {"e":2,"d":{"type":"user.message","convId":"conversation-1","workspaceId":"workspace-1","text":"Inspect this project","asGoal":true}}
 ```
 
-Streaming event `1` carries typed payloads such as `status`, `msg.start`, `reasoning`, `chunk`, `tool_call`, `request`, `goal`, `error`, and `done`. See [docs/api.md](docs/api.md) for the event catalog and payloads.
+The RPC chat endpoint is event `75` and accepts the snake_case request fields documented in [docs/api.md](docs/api.md). Streaming event `1` carries typed payloads such as `status`, `msg.start`, `reasoning`, `chunk`, `tool_call`, `request`, `goal`, `error`, and `done`. See [docs/api.md](docs/api.md) for the event catalog and payloads.
 
 ## Development
 

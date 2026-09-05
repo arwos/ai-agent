@@ -2,7 +2,7 @@
 
 The browser API is available only through WebSocket at `/api/ws`. There is no REST or HTTP JSON-RPC API for application screens.
 
-The protocol uses stable numeric event IDs from `internal/app/api_websocket.go`. Send a request as `{"e": <event-id>, "d": <parameters>}`. A successful RPC response carries the handler result in `d`; a failed request carries `err`. Event IDs are append-only: clients must use the IDs from the matching application version and must not infer an ID from a method name.
+The protocol uses stable numeric event IDs from `internal/app/api_events.go`. Send a request as `{"e": <event-id>, "d": <parameters>}`. A successful RPC response carries the handler result in `d`; a failed request carries `err`. Event IDs are append-only: clients must use the IDs from the matching application version and must not infer an ID from a method name.
 
 ```json
 {"e": 42, "d": {"id": "conversation-1"}}
@@ -29,13 +29,13 @@ Secrets are write-only: provider API keys, proxy passwords, and MCP headers are 
 | 100–110 | Settings and conversations | settings `export/import/cleanup`; `version`; conversation `setModel/runStatus/deleteMessage`; skills `reindex/pickStart/pickStatus/openFolder` |
 | 111–114 | Skill groups | `list/save/delete/assign` |
 | 115–117 | Application | `update.status`, `update.apply`, `system.info` |
-| 118–132 | Local LLM runtimes | Ollama/Llama.cpp install, settings CRUD, start, model refresh/list/pull/remove |
+| 118–138 | Local LLM runtimes | Ollama/Llama.cpp install, settings CRUD, start, model refresh/list/pull/remove |
 
 The historical managed-skill events at IDs 26–30 are retained for protocol compatibility. New UI code uses the current skill workflows and IDs rather than treating the compatibility entries as a separate API.
 
 ## Chat and streaming
 
-Send a chat request on event `75`:
+Send a chat request through the RPC event `75`:
 
 ```json
 {
@@ -53,7 +53,7 @@ Send a chat request on event `75`:
 
 `dialog_id` and `content` are required for a new request. Optional fields are `workspace_id`, `agentId`, `provider`, `model`, `skills`, `asGoal`, `resume`, and `errorMessageId`. A resume request reuses the prior user message and may resolve a displayed error by its message ID. The workspace must be open; when omitted the backend uses the `default` workspace ID.
 
-Event `1` is a broadcast stream. Its payload is an object with a UUID `id`, a `type`, and a `payload`; stream payloads identify the conversation as `dialog_id`. Clients must ignore frames for another active conversation.
+Event `1` is a broadcast stream. Its payload is an object with a UUID `id`, a `type`, and a `payload`; stream payloads identify the conversation as `dialog_id` when they belong to a conversation. Clients must ignore frames for another active conversation.
 
 | Stream type | Meaning |
 | --- | --- |
@@ -64,12 +64,16 @@ Event `1` is a broadcast stream. Its payload is an object with a UUID `id`, a `t
 | `tool_call` | Completed or failed tool invocation with task-related details. |
 | `request` | A user interaction request, such as approval, question, choice, or multichoice. |
 | `goal`, `goal.clear` | Current tool-driven goal update or removal. |
+| `goal.update` | Incremental update to the current goal state. |
+| `bg` | Background tool or task progress and completion data. |
+| `message.deleted` | Notification that a conversation message was deleted. |
 | `error` | Chat error with a stable `message_id` when available. |
 | `done` | Completion state, model/provider, token counts, context size, latency, and request-rate data. |
 | `local_llm.install` | Progress/status published while installing a local runtime. |
+| `local_llm.model` | Start, completion, or error state for a local model operation. |
 | `local_llm.model_pull` | Progress/status published while downloading a local model. |
 
-Event `2` is reserved for the legacy stream input frame and is handled separately from RPC event `75`; browser code should use the shared WebSocket helpers in `web/src/lib/api.ts`.
+Event `2` is the legacy stream-input frame and is handled separately from RPC event `75`. It carries `user.message`, `user.continue`, `user.stop`, `user.response`, `goal.pause`, and `goal.stop` frames. Browser code should use the shared WebSocket helpers in `web/src/lib/api.ts` rather than constructing envelopes directly.
 
 ## Goals, storage, and safety
 
