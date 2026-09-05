@@ -485,7 +485,14 @@ func nextPage(value string) string {
 func validModelID(value string) bool {
 	// Hugging Face IDs may include a revision/quantization tag. Keep the
 	// namespace separator mandatory and reject path separators/traversal.
-	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@+-]*/[A-Za-z0-9][A-Za-z0-9._:@+-]*$`).MatchString(value)
+	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$`).MatchString(value)
+}
+
+func modelRepoID(value string) string {
+	if repo, _, ok := strings.Cut(value, ":"); ok {
+		return repo
+	}
+	return value
 }
 
 func directorySize(root string) (int64, error) {
