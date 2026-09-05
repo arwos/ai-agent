@@ -239,9 +239,9 @@ func (s *Service) modelDownloadSize(ctx context.Context, modelID string) (int64,
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("Hugging Face model metadata: %s", resp.Status)
+		return 0, fmt.Errorf("hugging face model metadata: %s", resp.Status)
 	}
 	body, err := utils.ReadAllResponse(resp.Body)
 	if err != nil {
@@ -263,7 +263,7 @@ func (s *Service) modelDownloadSize(ctx context.Context, modelID string) (int64,
 		}
 	}
 	if largest == 0 {
-		return 0, fmt.Errorf("Hugging Face model size is unavailable")
+		return 0, fmt.Errorf("hugging face model size is unavailable")
 	}
 	return largest, nil
 }
@@ -414,7 +414,7 @@ func (s *Service) commandProgress(ctx context.Context, settings models.LocalLLMS
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	cmd.Dir, cmd.Env = filepath.Dir(binaryPath), s.environment(settings, modelsPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

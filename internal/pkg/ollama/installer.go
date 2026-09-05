@@ -193,7 +193,7 @@ func (s *Service) run(ctx context.Context, settings models.LocalLLMSettings, arg
 
 func (s *Service) runProgress(ctx context.Context, settings models.LocalLLMSettings, progress func(string), args ...string) ([]byte, error) {
 	if settings.BinaryPath == "" {
-		return nil, fmt.Errorf("Ollama binary path is not configured")
+		return nil, fmt.Errorf("ollama binary path is not configured")
 	}
 	binaryPath, err := filepath.Abs(settings.BinaryPath)
 	if err != nil {
@@ -209,7 +209,7 @@ func (s *Service) runProgress(ctx context.Context, settings models.LocalLLMSetti
 	if err := os.MkdirAll(s.root, 0755); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...) //nolint:gosec // validated input or bounded archive is required here
 	cmd.Dir, cmd.Env = filepath.Dir(binaryPath), s.environment(ctx, settings, modelsPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

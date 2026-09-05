@@ -1,10 +1,12 @@
-
+.kilo/
+.qwen/
 .tools/
 bin/
 vendor/
 build/
 .idea/
 .vscode/
+
 coverage.txt
 coverage.out
 *.exe
