@@ -125,10 +125,12 @@ internal/app       lifecycle and WebSocket event handlers
         |
         +-- internal/pkg/agent       AgentEngine and goals
         +-- internal/pkg/llm         OpenAI-compatible/Ollama client
+        +-- internal/pkg/responseparser  assistant tool-call parsing (OpenAI, Anthropic, Gemini)
         +-- internal/pkg/workspace   os.OpenRoot filesystem boundary
         +-- internal/pkg/toolexecutor shared tool registration and dispatch
         +-- internal/pkg/mcp          HTTP/SSE/stdio MCP clients
         +-- internal/pkg/dialog       JSONL history and session memory
+        +-- internal/pkg/goal         execution-goal persistence
         +-- internal/pkg/skills       file-backed skills, groups, and indexes
         +-- internal/pkg/knowledge    file-backed knowledge and indexes
         +-- internal/pkg/configstore  SQLite configuration repository

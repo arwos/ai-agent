@@ -56,10 +56,12 @@ The application is assembled through goppy dependency injection. Technical servi
 | --- | --- | --- |
 | `internal/app` | Lifecycle, RPC handlers, chat orchestration, stream publication, SPA serving | WebSocket and application boundary |
 | `internal/pkg/agent` | Agent execution loop, model calls, tool callbacks, goals | Dialog store and tool registry |
-| `internal/pkg/llm` | OpenAI-compatible requests, native/text tool calling, streaming, usage | External provider endpoints |
+| `internal/pkg/llm` | OpenAI-compatible requests, streaming, usage | External provider endpoints |
+| `internal/pkg/responseparser` | Normalizes assistant tool calls from OpenAI, Anthropic, and Gemini response shapes | In-memory, feed by the LLM client |
 | `internal/pkg/toolexecutor` | Stable tool registry, schemas, builtin MCP catalog | Context-aware handlers |
 | `internal/pkg/mcp` | HTTP, SSE, and stdio MCP integration | Configured MCP servers |
-| `internal/pkg/dialog` | JSONL history, session memory, goals, registries | `datasource/dialogs/{profileId}/{sessionId}` |
+| `internal/pkg/dialog` | JSONL history, session memory, registries | `datasource/dialogs/{profileId}/{sessionId}` |
+| `internal/pkg/goal` | Execution-goal models and persistence (`goal.json`, `goals.jsonl`) | `datasource/dialogs/{profileId}/{sessionId}` |
 | `internal/pkg/configstore` | Profiles, providers, agents, settings, integrations | `datasource/db/sqlite.db` |
 | `internal/pkg/workspace` | Open workspace roots, relative file operations, picker | `os.Root` boundary |
 | `internal/pkg/knowledge` | Documents, imports, indexing and search | `datasource/knowledge/{profileId}` |
