@@ -3,7 +3,8 @@
  *  Use of this source code is governed by a GPL-3.0 license that can be found in the LICENSE file.
  */
 
-package dialog
+// Package goal persists execution plans associated with dialogs.
+package goal
 
 import (
 	"encoding/json"
@@ -12,11 +13,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Goal is an execution plan for one dialog. It is persisted next to
-// history.jsonl so a browser reconnect can restore its live state.
+const sessionSeparator = "\x00"
+
+type Store struct {
+	Root string
+	mu   sync.Mutex
+}
+
 type Goal struct {
 	ID        string        `json:"id"`
 	DialogID  string        `json:"dialogId"`
@@ -28,8 +35,6 @@ type Goal struct {
 	Approval  *GoalApproval `json:"approval,omitempty"`
 }
 
-// GoalApproval is persisted while the engine waits for a browser response.
-// This allows a reconnecting client to restore the confirmation dialog.
 type GoalApproval struct {
 	ID        string    `json:"id"`
 	Kind      string    `json:"kind"`
@@ -40,33 +45,43 @@ type GoalApproval struct {
 }
 
 type GoalTask struct {
-	ID          string   `json:"id"`
-	Label       string   `json:"label"`
-	Tools       []string `json:"tools,omitempty"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-	Attempts    int      `json:"attempts"`
-	MaxAttempts int      `json:"maxAttempts"`
-	LastTool    string   `json:"lastTool,omitempty"`
-	// Arguments are retained only for the most recent successful/attempted
-	// invocation. They let a declined completion approval re-run the same
-	// evidence-gathering step instead of asking the model to remember it.
-	Arguments  map[string]any `json:"arguments,omitempty"`
-	LastResult string         `json:"lastResult,omitempty"`
-	Error      string         `json:"error,omitempty"`
-	StartedAt  time.Time      `json:"startedAt,omitempty"`
-	FinishedAt time.Time      `json:"finishedAt,omitempty"`
-	// Status is pending, running, done, failed, or skipped. A planned task is
-	// skipped when the successful run did not need a matching tool operation.
-	Status string `json:"status"`
+	ID          string         `json:"id"`
+	Label       string         `json:"label"`
+	Tools       []string       `json:"tools,omitempty"`
+	DependsOn   []string       `json:"dependsOn,omitempty"`
+	Attempts    int            `json:"attempts"`
+	MaxAttempts int            `json:"maxAttempts"`
+	LastTool    string         `json:"lastTool,omitempty"`
+	Arguments   map[string]any `json:"arguments,omitempty"`
+	LastResult  string         `json:"lastResult,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	StartedAt   time.Time      `json:"startedAt,omitempty"`
+	FinishedAt  time.Time      `json:"finishedAt,omitempty"`
+	Status      string         `json:"status"`
 }
 
-// Goals returns the latest snapshot of every goal recorded for a dialog.
-// Updates are appended so a crash cannot destroy the previous execution plan.
+func NewStore(root string) *Store { return &Store{Root: root} }
+
+func (s *Store) goalPath(id string) string {
+	parts := strings.SplitN(id, sessionSeparator, 2)
+	if len(parts) == 2 && safePart(parts[0]) && safePart(parts[1]) {
+		return filepath.Join(s.Root, parts[0], parts[1], "goal.json")
+	}
+	return filepath.Join(s.Root, filepath.Base(id)+".goal.json")
+}
+
+func (s *Store) goalsPath(id string) string {
+	return filepath.Join(filepath.Dir(s.goalPath(id)), "goals.jsonl")
+}
+
+func safePart(value string) bool {
+	return value != "" && value != "." && value != ".." && filepath.Base(value) == value && !strings.ContainsAny(value, `/\\`)
+}
+
 func (s *Store) Goals(id string) ([]Goal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	path := s.goalsPath(id)
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(s.goalsPath(id))
 	if errors.Is(err, os.ErrNotExist) {
 		return []Goal{}, nil
 	}
@@ -79,36 +94,22 @@ func (s *Store) Goals(id string) ([]Goal, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		var goal Goal
-		if err := json.Unmarshal([]byte(line), &goal); err != nil {
+		var item Goal
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
 			return nil, fmt.Errorf("decode dialog goal history: %w", err)
 		}
-		if _, exists := byID[goal.ID]; !exists {
-			order = append(order, goal.ID)
+		if _, exists := byID[item.ID]; !exists {
+			order = append(order, item.ID)
 		}
-		byID[goal.ID] = goal
+		byID[item.ID] = item
 	}
 	items := make([]Goal, 0, len(order))
-	for _, goalID := range order {
-		items = append(items, byID[goalID])
+	for _, id := range order {
+		items = append(items, byID[id])
 	}
 	return items, nil
 }
 
-func (s *Store) goalPath(id string) string {
-	parts := strings.SplitN(id, sessionSeparator, 2)
-	if len(parts) == 2 && safePart(parts[0]) && safePart(parts[1]) {
-		return filepath.Join(s.Root, parts[0], parts[1], "goal.json")
-	}
-	return filepath.Join(s.Root, filepath.Base(id)+".goal.json") // legacy callers
-}
-
-func (s *Store) goalsPath(id string) string {
-	path := s.goalPath(id)
-	return filepath.Join(filepath.Dir(path), "goals.jsonl")
-}
-
-// Goal returns nil when a dialog has no current tool-driven goal.
 func (s *Store) Goal(id string) (*Goal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,30 +120,30 @@ func (s *Store) Goal(id string) (*Goal, error) {
 	if err != nil {
 		return nil, err
 	}
-	var goal Goal
-	if err := json.Unmarshal(b, &goal); err != nil {
+	var item Goal
+	if err := json.Unmarshal(b, &item); err != nil {
 		return nil, fmt.Errorf("decode dialog goal: %w", err)
 	}
-	if goal.Tasks == nil {
-		goal.Tasks = []GoalTask{}
+	if item.Tasks == nil {
+		item.Tasks = []GoalTask{}
 	}
-	return &goal, nil
+	return &item, nil
 }
 
-func (s *Store) SaveGoal(id string, goal Goal) error {
+func (s *Store) SaveGoal(id string, item Goal) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if goal.ID == "" || goal.Goal == "" {
+	if item.ID == "" || item.Goal == "" {
 		return fmt.Errorf("goal id and title are required")
 	}
-	if goal.CreatedAt.IsZero() {
-		goal.CreatedAt = time.Now().UTC()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = time.Now().UTC()
 	}
-	goal.UpdatedAt = time.Now().UTC()
-	if goal.Tasks == nil {
-		goal.Tasks = []GoalTask{}
+	item.UpdatedAt = time.Now().UTC()
+	if item.Tasks == nil {
+		item.Tasks = []GoalTask{}
 	}
-	b, err := json.MarshalIndent(goal, "", "  ")
+	b, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -168,7 +169,7 @@ func (s *Store) SaveGoal(id string, goal Goal) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
-	line, err := json.Marshal(goal)
+	line, err := json.Marshal(item)
 	if err != nil {
 		return err
 	}
@@ -195,8 +196,6 @@ func (s *Store) DeleteGoal(id string) error {
 	return nil
 }
 
-// DeleteGoals removes current and historical goal state for a deleted or
-// cleared conversation.
 func (s *Store) DeleteGoals(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

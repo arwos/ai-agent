@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arwos/ai-agent/internal/pkg/goal"
 )
 
 type Message struct {
@@ -187,6 +189,16 @@ func (s *Store) DeleteProfile(profileID string) error {
 	defer s.mu.Unlock()
 	return os.RemoveAll(filepath.Join(s.Root, profileID))
 }
+
+func (s *Store) goalStore() *goal.Store {
+	return goal.NewStore(s.Root)
+}
+
+func (s *Store) Goals(id string) ([]goal.Goal, error)     { return s.goalStore().Goals(id) }
+func (s *Store) Goal(id string) (*goal.Goal, error)       { return s.goalStore().Goal(id) }
+func (s *Store) SaveGoal(id string, item goal.Goal) error { return s.goalStore().SaveGoal(id, item) }
+func (s *Store) DeleteGoal(id string) error               { return s.goalStore().DeleteGoal(id) }
+func (s *Store) DeleteGoals(id string) error              { return s.goalStore().DeleteGoals(id) }
 
 // CleanupOrphans removes legacy histories and profile/session directories that
 // are no longer represented by the configuration store. It only operates

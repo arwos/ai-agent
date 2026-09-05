@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/arwos/ai-agent/internal/pkg/goal"
 )
 
 func TestConcurrentAppendAndHistoryLimit(t *testing.T) {
@@ -126,12 +128,12 @@ func TestDelete(t *testing.T) {
 func TestGoalRoundTrip(t *testing.T) {
 	s := &Store{Root: t.TempDir()}
 	id := SessionKey("profile-1", "session-1")
-	goal := Goal{ID: "goal-1", DialogID: "session-1", Goal: "Inspect the project", Status: "running", Tasks: []GoalTask{{ID: "task-1", Label: "fs.list_dir", Status: "running"}}}
-	if err := s.SaveGoal(id, goal); err != nil {
+	item := goal.Goal{ID: "goal-1", DialogID: "session-1", Goal: "Inspect the project", Status: "running", Tasks: []goal.GoalTask{{ID: "task-1", Label: "fs.list_dir", Status: "running"}}}
+	if err := s.SaveGoal(id, item); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := s.Goal(id)
-	if err != nil || stored == nil || stored.Goal != goal.Goal || len(stored.Tasks) != 1 {
+	if err != nil || stored == nil || stored.Goal != item.Goal || len(stored.Tasks) != 1 {
 		t.Fatalf("goal=%#v err=%v", stored, err)
 	}
 	if err := s.DeleteGoal(id); err != nil {
@@ -142,7 +144,7 @@ func TestGoalRoundTrip(t *testing.T) {
 		t.Fatalf("goal=%#v err=%v", stored, err)
 	}
 	goals, err := s.Goals(id)
-	if err != nil || len(goals) != 1 || goals[0].ID != goal.ID {
+	if err != nil || len(goals) != 1 || goals[0].ID != item.ID {
 		t.Fatalf("goals=%#v err=%v", goals, err)
 	}
 }

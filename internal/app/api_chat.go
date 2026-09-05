@@ -18,6 +18,7 @@ import (
 	"go.osspkg.com/logx"
 
 	"github.com/arwos/ai-agent/internal/pkg/dialog"
+	"github.com/arwos/ai-agent/internal/pkg/goal"
 	"github.com/arwos/ai-agent/internal/pkg/interaction"
 	"github.com/arwos/ai-agent/internal/pkg/llm"
 	"github.com/arwos/ai-agent/internal/pkg/mcp"
@@ -54,7 +55,7 @@ func goalTitle(value string) string {
 	}
 	return value
 }
-func goalPlan(ctx context.Context, provider llm.Provider, dialogID, request string, availableTools []toolexecutor.Tool) (*dialog.Goal, llm.Usage) {
+func goalPlan(ctx context.Context, provider llm.Provider, dialogID, request string, availableTools []toolexecutor.Tool) (*goal.Goal, llm.Usage) {
 	goal := defaultGoal(dialogID, request)
 	toolNames := make([]string, 0, len(availableTools))
 	for _, tool := range availableTools {
@@ -74,17 +75,17 @@ func goalPlan(ctx context.Context, provider llm.Provider, dialogID, request stri
 	}
 	return goal, response.Usage
 }
-func defaultGoal(dialogID, request string) *dialog.Goal {
+func defaultGoal(dialogID, request string) *goal.Goal {
 	title := goalTitle(request)
-	return &dialog.Goal{
+	return &goal.Goal{
 		ID:       dialog.NewMessageID(),
 		DialogID: dialogID,
 		Goal:     title,
 		Status:   "running",
-		Tasks:    []dialog.GoalTask{{ID: dialog.NewMessageID(), Label: title, Status: "pending"}},
+		Tasks:    []goal.GoalTask{{ID: dialog.NewMessageID(), Label: title, Status: "pending"}},
 	}
 }
-func applyGoalPlan(goal *dialog.Goal, content string) error {
+func applyGoalPlan(planGoal *goal.Goal, content string) error {
 	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
 	if start < 0 || end <= start {
 		return fmt.Errorf("goal plan does not contain a JSON object")
@@ -101,22 +102,22 @@ func applyGoalPlan(goal *dialog.Goal, content string) error {
 		return err
 	}
 	if strings.TrimSpace(plan.Goal) != "" {
-		goal.Goal = goalTitle(plan.Goal)
+		planGoal.Goal = goalTitle(plan.Goal)
 	}
-	planned := make([]dialog.GoalTask, 0, min(len(plan.Tasks), 8))
+	planned := make([]goal.GoalTask, 0, min(len(plan.Tasks), 8))
 	for _, task := range plan.Tasks {
 		label := strings.Join(strings.Fields(task.Label), " ")
 		if label == "" || len(planned) >= 8 {
 			continue
 		}
 		tools := uniqueStrings(task.Tools)
-		planned = append(planned, dialog.GoalTask{ID: dialog.NewMessageID(), Label: label, Tools: tools, DependsOn: task.DependsOn, MaxAttempts: 3, Status: "pending"})
+		planned = append(planned, goal.GoalTask{ID: dialog.NewMessageID(), Label: label, Tools: tools, DependsOn: task.DependsOn, MaxAttempts: 3, Status: "pending"})
 	}
 	if len(planned) > 0 {
-		goal.Tasks = planned
+		planGoal.Tasks = planned
 	}
-	if len(goal.Tasks) == 0 {
-		goal.Tasks = append(goal.Tasks, dialog.GoalTask{ID: dialog.NewMessageID(), Label: goal.Goal, Status: "pending"})
+	if len(planGoal.Tasks) == 0 {
+		planGoal.Tasks = append(planGoal.Tasks, goal.GoalTask{ID: dialog.NewMessageID(), Label: planGoal.Goal, Status: "pending"})
 	}
 	return nil
 }
@@ -152,7 +153,7 @@ func cloneToolArguments(value map[string]any) map[string]any {
 	}
 	return copy
 }
-func goalHasExecutablePending(goal *dialog.Goal) bool {
+func goalHasExecutablePending(goal *goal.Goal) bool {
 	for _, task := range goal.Tasks {
 		if task.Status == "pending" && len(task.Tools) > 0 {
 			return true
@@ -160,7 +161,7 @@ func goalHasExecutablePending(goal *dialog.Goal) bool {
 	}
 	return false
 }
-func goalAllDone(goal *dialog.Goal) bool {
+func goalAllDone(goal *goal.Goal) bool {
 	if len(goal.Tasks) == 0 {
 		return false
 	}
@@ -216,7 +217,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		return e
 	}
 	q.DialogID = dialog.SessionKey(profileID, publicDialogID)
-	var resumedGoal *dialog.Goal
+	var resumedGoal *goal.Goal
 	if q.Resume {
 		resumedGoal, e = a.dialogs.Goal(q.DialogID)
 		if e != nil {
@@ -445,7 +446,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	var provider llm.Provider = llm.New(profileProvider.Kind, profileProvider.BaseURL, apiKey, model, a.providerProxy(profileID, profileProvider.ProxyID), llm.WithRPM(profileProvider.ID, profileProvider.RPM))
 	activeRateLimitKey, activeRPM := profileProvider.ID, profileProvider.RPM
 	activeGoal := resumedGoal
-	publishGoal := func(goal *dialog.Goal) {
+	publishGoal := func(goal *goal.Goal) {
 		if a.publish != nil && goal != nil {
 			a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": publicDialogID, "goal": goal}})
 		}
@@ -518,7 +519,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 				break
 			}
 			if !started {
-				activeGoal.Tasks = append(activeGoal.Tasks, dialog.GoalTask{ID: dialog.NewMessageID(), Label: toolLabel, Tools: []string{name}, Attempts: 1, MaxAttempts: 3, Status: "running", StartedAt: time.Now().UTC()})
+				activeGoal.Tasks = append(activeGoal.Tasks, goal.GoalTask{ID: dialog.NewMessageID(), Label: toolLabel, Tools: []string{name}, Attempts: 1, MaxAttempts: 3, Status: "running", StartedAt: time.Now().UTC()})
 			}
 			if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
 				logx.Error("failed to save dialog goal", "dialog_id", publicDialogID, "err", saveErr)
@@ -666,7 +667,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			}
 			approvalID := streamMessageID()
 			activeGoal.Status = "awaiting_approval"
-			activeGoal.Approval = &dialog.GoalApproval{
+			activeGoal.Approval = &goal.GoalApproval{
 				ID: approvalID, Kind: "approval", Title: "Confirm goal completion",
 				Detail: activeGoal.Goal, Command: "goal.complete", CreatedAt: time.Now().UTC(),
 			}

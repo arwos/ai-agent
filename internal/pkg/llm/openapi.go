@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +22,7 @@ import (
 	"go.osspkg.com/logx"
 	"golang.org/x/net/proxy"
 
+	"github.com/arwos/ai-agent/internal/pkg/responseparser"
 	"github.com/arwos/ai-agent/internal/pkg/utils"
 )
 
@@ -151,7 +151,7 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 	}
 	var out Response
 	var thinking thinkingStreamParser
-	toolCalls := make(map[int]*streamToolCall)
+	var toolParser responseparser.OpenAIStream
 	scanner := bufio.NewScanner(res.Body)
 	scanner.Buffer(make([]byte, 4096), 100<<20)
 	for scanner.Scan() {
@@ -170,16 +170,7 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 		if len(chunk.Choices) > 0 {
 			d := chunk.Choices[0].Delta
 			for _, deltaCall := range d.ToolCalls {
-				call := toolCalls[deltaCall.Index]
-				if call == nil {
-					call = &streamToolCall{}
-					toolCalls[deltaCall.Index] = call
-				}
-				if deltaCall.ID != "" {
-					call.id = deltaCall.ID
-				}
-				call.name += deltaCall.Function.Name
-				call.arguments += deltaCall.Function.Arguments
+				toolParser.Add(responseparser.OpenAIFragment{Index: deltaCall.Index, ID: deltaCall.ID, Name: deltaCall.Function.Name, Arguments: deltaCall.Function.Arguments})
 			}
 			reasoning := d.ReasoningContent
 			if reasoning == "" {
@@ -222,18 +213,12 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 			return out, err
 		}
 	}
-	indices := make([]int, 0, len(toolCalls))
-	for index := range toolCalls {
-		indices = append(indices, index)
+	parsedCalls, parseErr := toolParser.Finish()
+	if parseErr != nil {
+		return out, parseErr
 	}
-	sort.Ints(indices)
-	for _, index := range indices {
-		call := toolCalls[index]
-		arguments, parseErr := parseToolArguments(json.RawMessage(call.arguments))
-		if parseErr != nil {
-			return out, fmt.Errorf("invalid streamed tool arguments for %q: %w", call.name, parseErr)
-		}
-		out.ToolCalls = append(out.ToolCalls, ToolCall{Name: call.name, Arguments: arguments})
+	for _, call := range parsedCalls {
+		out.ToolCalls = append(out.ToolCalls, ToolCall{Name: call.Name, Arguments: call.Arguments})
 	}
 	if len(out.ToolCalls) > 0 {
 		out.ToolCall = &out.ToolCalls[0]
@@ -248,10 +233,6 @@ func (p OpenAPIProvider) ChatCompletionStream(ctx context.Context, system string
 		return Response{}, fmt.Errorf("model returned an incomplete tool call: <tool_call> is missing the tool name; retry the request or use a model with native tool calling")
 	}
 	return out, scanner.Err()
-}
-
-type streamToolCall struct {
-	id, name, arguments string
 }
 
 var unsupportedTools sync.Map
@@ -673,65 +654,16 @@ func messageRoles(messages []Message) []string {
 }
 
 func parseToolArguments(raw json.RawMessage) (map[string]any, error) {
-	value := strings.TrimSpace(string(raw))
-	if value == "" || value == "null" {
-		return map[string]any{}, nil
-	}
-	if strings.HasPrefix(value, "```json") && strings.HasSuffix(value, "```") {
-		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "```json"), "```"))
-	}
-	arguments := map[string]any{}
-	if err := json.Unmarshal([]byte(value), &arguments); err == nil {
-		return arguments, nil
-	}
-	var encoded string
-	if err := json.Unmarshal([]byte(value), &encoded); err != nil {
-		return nil, err
-	}
-	encoded = strings.TrimSpace(encoded)
-	if strings.HasPrefix(encoded, "```json") && strings.HasSuffix(encoded, "```") {
-		encoded = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(encoded, "```json"), "```"))
-	}
-	if err := json.Unmarshal([]byte(encoded), &arguments); err != nil {
-		return nil, err
-	}
-	return arguments, nil
+	return responseparser.Arguments(raw)
 }
 
 func parsePromptToolCalls(content string) []ToolCall {
-	// Some local models apply Markdown escaping to tool names (for example,
-	// fs.list\_dir). That is not a valid JSON escape sequence, but it is still
-	// an unambiguous tool call and must not leak into the final assistant text.
-	value := strings.ReplaceAll(strings.TrimSpace(content), `\_`, `_`)
-	// Local models often add a short explanation before a JSON tool call. The
-	// fenced block is still an unambiguous tool-call boundary, so extract it
-	// before attempting to decode the response as JSON.
-	if start := strings.Index(strings.ToLower(value), "```json"); start >= 0 {
-		value = value[start+len("```json"):]
-		if end := strings.Index(value, "```"); end >= 0 {
-			value = value[:end]
-		}
+	calls := responseparser.PromptToolCalls(content)
+	out := make([]ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, ToolCall{Name: call.Name, Arguments: call.Arguments})
 	}
-	if call, ok := decodePromptToolCall([]byte(value)); ok {
-		return []ToolCall{*call}
-	}
-	// Local models may wrap a call in prose or emit several JSON objects in
-	// one answer. Try each object start; this deliberately avoids selecting the
-	// nested `{}` belonging to an `arguments` field.
-	calls := make([]ToolCall, 0, 2)
-	for offset := 0; offset < len(value); offset++ {
-		if value[offset] != '{' {
-			continue
-		}
-		decoder := json.NewDecoder(strings.NewReader(value[offset:]))
-		var raw map[string]json.RawMessage
-		if err := decoder.Decode(&raw); err == nil {
-			if call, ok := decodePromptToolMap(raw); ok {
-				calls = append(calls, *call)
-			}
-		}
-	}
-	return calls
+	return out
 }
 
 func malformedToolCall(content string) bool {
@@ -753,45 +685,6 @@ func malformedToolCall(content string) bool {
 	return false
 }
 
-// decodePromptToolCall accepts the documented {tool, arguments} form and a
-// common local-model variation where call parameters are placed beside
-// "arguments". The latter must still execute as a tool call rather than leak
-// its raw JSON into the visible assistant answer.
-func decodePromptToolCall(data []byte) (*ToolCall, bool) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, false
-	}
-	return decodePromptToolMap(raw)
-}
-
-func decodePromptToolMap(raw map[string]json.RawMessage) (*ToolCall, bool) {
-	toolRaw, exists := raw["tool"]
-	if !exists {
-		return nil, false
-	}
-	var name string
-	if err := json.Unmarshal(toolRaw, &name); err != nil || strings.TrimSpace(name) == "" {
-		return nil, false
-	}
-	arguments := make(map[string]any)
-	if value, exists := raw["arguments"]; exists && string(value) != "null" {
-		if err := json.Unmarshal(value, &arguments); err != nil {
-			return nil, false
-		}
-	}
-	for key, value := range raw {
-		if key == "tool" || key == "arguments" {
-			continue
-		}
-		var decoded any
-		if err := json.Unmarshal(value, &decoded); err != nil {
-			return nil, false
-		}
-		arguments[key] = decoded
-	}
-	return &ToolCall{Name: name, Arguments: arguments}, true
-}
 func (p OpenAPIProvider) ListModels(ctx context.Context) ([]string, error) {
 	r, e := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint("/models"), nil)
 	if e != nil {
