@@ -60,6 +60,19 @@ func TextToolInstructions(tools []struct {
 func ToolSchema(name, description, schema string) string {
 	return fmt.Sprintf(ToolSchemaTemplate, name, description, schema)
 }
+
+func Mode(mode string) string {
+	switch mode {
+	case "plan":
+		return "\n\n## Plan mode\nCreate and explain a detailed plan first. Do not execute tools or cause side effects until the user approves the plan."
+	case "consult":
+		return "\n\n## Consult mode\nThis is a read-only investigation. You may use only fs.list_dir, fs.read_file, fs.file_info, fs.grep, git.status, git.diff, and git.log. Never modify files, run commands, call MCP tools, or perform destructive actions."
+	case "workflow":
+		return "\n\n## Workflow mode\nFollow the selected workflow's ordered steps and declared output and validation contracts. Do not skip or reorder steps."
+	default:
+		return ""
+	}
+}
 func MCPInstructions(name, value string) string {
 	return fmt.Sprintf(MCPInstructionsTemplate, name, value)
 }

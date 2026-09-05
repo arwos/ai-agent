@@ -12,6 +12,8 @@ import {
   Pencil,
   Plus,
   Settings,
+  Sun,
+  Moon,
   Trash2,
   UserRound,
   X,
@@ -21,6 +23,7 @@ import { ACCENTS, formatMessageTime, STATUS_META } from "../lib/data";
 import { pickFolder, wsRequest } from "../lib/api";
 import type { Lang } from "../lib/i18n";
 import { useT } from "../lib/i18n";
+import { useTheme } from "../lib/theme";
 
 type Props = {
   view: View;
@@ -221,6 +224,25 @@ function LangSwitcher() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ThemeSwitcher() {
+  const { theme, toggleTheme } = useTheme();
+  const { t } = useT();
+  const light = theme === "light";
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.08] px-2 text-slate-400 transition-all hover:bg-white/[0.05] hover:text-slate-200"
+      title={t("theme.toggle")}
+      aria-label={t("theme.toggle")}
+      aria-pressed={light}
+    >
+      {light ? <Sun size={13} /> : <Moon size={13} />}
+      <span className="font-mono text-[10px] font-semibold uppercase">{t(light ? "theme.light" : "theme.dark")}</span>
+    </button>
   );
 }
 
@@ -814,9 +836,12 @@ function SidebarContent(props: Props) {
           onDelete={onProfileDelete}
           onUpdate={onProfileUpdate}
         />
-        <div className="flex items-center justify-between px-0.5">
+        <div className="flex items-center justify-between gap-2 px-0.5">
           <span className="font-mono text-[8.5px] text-slate-700">{t("profile.isolated")}</span>
-          <LangSwitcher />
+          <div className="flex items-center gap-1.5">
+            <ThemeSwitcher />
+            <LangSwitcher />
+          </div>
         </div>
       </div>
     </div>

@@ -32,9 +32,10 @@ import {
   WS_EVENT_CONVERSATION_GET,
   WS_EVENT_CONVERSATION_RUN_STATUS,
   WS_EVENT_SETTINGS_CLEANUP,
+  listWorkflows,
   wsRequest,
 } from "./lib/api";
-import type { AgentRequest, BgTask, Db, GoalState } from "./lib/api";
+import type { AgentRequest, BgTask, Db, GoalState, Workflow } from "./lib/api";
 import { I18nProvider, useT } from "./lib/i18n";
 import type { TVars } from "./lib/i18n";
 import { Sidebar } from "./components/Sidebar";
@@ -217,6 +218,7 @@ function Shell() {
   const [goals, setGoals] = useState<GoalState[]>([]);
   const [goalPopup, setGoalPopup] = useState<GoalState | null>(null);
   const [goalCollapsed, setGoalCollapsed] = useState(false);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [bgTasks, setBgTasks] = useState<BgTask[]>([]);
 
   useEffect(() => {
@@ -427,6 +429,11 @@ function Shell() {
       await hydrateProfile(data);
     })();
   }, [hydrateProfile]);
+
+  useEffect(() => {
+    if (!activeProfileId) return;
+    void listWorkflows().then(setWorkflows).catch(() => setWorkflows([]));
+  }, [activeProfileId]);
 
   /* ------------------------------------------------------- ws connection */
 
@@ -775,7 +782,13 @@ function Shell() {
     );
   };
 
-  const sendMessage = async (text: string, files: string[], skillIds: string[], asGoal = false) => {
+  const sendMessage = async (
+    text: string,
+    files: string[],
+    skillIds: string[],
+    mode: "normal" | "plan" | "consult" | "workflow" = "normal",
+    workflowId?: string,
+  ) => {
     if (!activeWsId || busy) return;
     setBusy(true);
     let convId = activeConvId;
@@ -828,7 +841,10 @@ function Shell() {
       text,
       files,
       skillNames,
-      asGoal,
+      mode,
+      // Keep the legacy field for older backends. Explicit modes take precedence.
+      asGoal: mode === "plan",
+      ...(workflowId ? { workflowId } : {}),
     };
     if (sockRef.current) sockRef.current.send(frame);
     else sendChat(frame);
@@ -1585,7 +1601,8 @@ function Shell() {
                     agent={activeDisplayAgent}
                     busy={busy}
                     disabled={!activeWsId}
-                    onSend={(txt, f, s, asGoal) => void sendMessage(txt, f, s, asGoal)}
+                    onSend={(txt, f, s, mode, workflowId) => void sendMessage(txt, f, s, mode, workflowId)}
+                    workflows={workflows}
                     onStop={stopConversation}
                     draft={draft}
                     skillGroups={agentSkillGroups}

@@ -17,6 +17,7 @@ The service is intended to run on localhost. Browser screens communicate with th
 - Import and search knowledge, skills, and durable memory using file-backed stores and Bleve indexes.
 - Install, start, stop, refresh, download, and remove Ollama and llama.cpp models.
 - Serve the production frontend from embedded assets with SPA fallback.
+- Execute per-message agent modes, reusable workflow definitions, and persisted parent/child agent runs.
 
 ### Non-functional
 
@@ -62,6 +63,7 @@ The application is assembled through goppy dependency injection. Technical servi
 | `internal/pkg/mcp` | HTTP, SSE, and stdio MCP integration | Configured MCP servers |
 | `internal/pkg/dialog` | JSONL history, session memory, registries | `datasource/dialogs/{profileId}/{sessionId}` |
 | `internal/pkg/goal` | Execution-goal models and persistence (`goal.json`, `goals.jsonl`) | `datasource/dialogs/{profileId}/{sessionId}` |
+| workflow service | Versioned YAML definitions, immutable run snapshots, artifacts, and workflow validation | `datasource/workflow/{profileId}` |
 | `internal/pkg/configstore` | Profiles, providers, agents, settings, integrations | `datasource/db/sqlite.db` |
 | `internal/pkg/workspace` | Open workspace roots, relative file operations, picker | `os.Root` boundary |
 | `internal/pkg/knowledge` | Documents, imports, indexing and search | `datasource/knowledge/{profileId}` |
@@ -73,7 +75,7 @@ The application is assembled through goppy dependency injection. Technical servi
 
 ## 5. Core data flow: chat
 
-1. The browser sends event `75` (`chat.send`) with a dialog ID, content, optional workspace, agent, provider, model, skills, goal, or resume parameters.
+1. The browser sends event `75` (`chat.send`) with a dialog ID, content, optional workspace, agent, provider, model, skills, mode, workflow ID, goal, or resume parameters.
 2. `internal/app` validates the request, loads profile and dialog state, resolves the opened workspace, and constructs an agent engine.
 3. The engine assembles the system prompt, selected skills, workspace instructions, conversation history, and available tool definitions.
 4. The LLM client sends a request to the selected provider. Streaming providers emit incremental frames.
@@ -82,9 +84,21 @@ The application is assembled through goppy dependency injection. Technical servi
 7. The service publishes stream frames on event `1`, including `msg.start`, `reasoning`, `chunk`, `tool_call`, `request`, `goal`, `error`, and `done`.
 8. Assistant and tool messages are persisted in the dialog JSONL history. Provider secrets are never returned.
 
+### Agent modes and workflow execution
+
+Modes are request-scoped: `normal` uses the selected agent's configured scope; `plan` creates an approval-gated goal plan; `consult` exposes only the fixed read-only workspace/Git allowlist; and `workflow` validates a profile-scoped YAML definition, snapshots its version and hash, expands its strict ordered steps into goal tasks, and waits for approval. Workflow steps execute serially. Substeps are included in the parent task prompt and do not become independent scheduler records. Declared order, output contracts, storage boundaries, capability requirements, and retry limits are strict.
+
+Workflow advancement is backend-gated by the persisted current task. A task cannot be skipped, duplicated, started out of order, or run in parallel. A failed task exposes its bounded status/error envelope to the main model, which decides whether to review, delegate elsewhere, or retry within `max_attempts`; the backend does not perform hidden retries.
+
+### Parent and child agents
+
+`agent.list` and `agent.run` are profile-scoped builtin MCP capabilities. Each delegated run gets a separate persisted child conversation, a one-time cryptographically random run token, and a parent link. Child scope excludes `agent.run` and user interaction; the child receives `agent.result` as its only callback capability and must use it to complete the protocol.
+
+`agent.result` accepts a bounded callback envelope containing success or failure, conclusion text, immutable artifact metadata, and backend-verifiable changed-file ranges. The callback is checked against the token and all parent/child/task relationships. After acceptance, the child performs its final turn, the callback envelope is persisted as canonical task evidence, and the parent engine resumes with that structured tool result without adding a user message. Repeated, late, wrong-profile, wrong-parent, wrong-child, and wrong-task callbacks are rejected.
+
 ## 6. Tool execution and interaction safety
 
-Tools are owned by their packages and registered through `toolexecutor.Registry`. Each tool has an exact stable name, description, input schema, and context-aware handler. Builtin MCP tools are exposed through the same registry as external MCP tools.
+Tools are owned by their packages and registered through `toolexecutor.Registry`. Each tool has an exact stable name, description, input schema, and context-aware handler. Builtin MCP tools are exposed through the same registry as external MCP tools. Mode filtering occurs at both prompt/schema construction and execution scope; consult mode excludes all MCP tools rather than classifying external tools heuristically.
 
 Workspace and Git tools operate through the active opened root. Relative paths are required, traversal is rejected, and destructive or approval-sensitive operations use the interaction tools. When a model must ask, choose, or obtain approval, the corresponding user-interaction tool is used instead of presenting an untracked prose choice.
 
@@ -100,6 +114,8 @@ Requests use the stable envelope:
 
 Event ranges are grouped by domain: configuration `10–11`, profiles `12–16`, agents `17–20`, skills and knowledge `25–40`, conversations and memory `41–55`, workspaces `56–71`, MCP `76–83`, providers `84–93`, proxies `94–99`, settings and system `100–117`, and local LLM runtimes `118–138`.
 
+Workflow management uses append-only events `139–144`: `workflow.list`, `workflow.get`, `workflow.save`, `workflow.delete`, `workflow.import`, and `workflow.export`. Runtime execution reuses `chat.send` with `mode=workflow` and `workflow_id`; agent delegation and artifact access are builtin MCP contracts rather than browser RPC endpoints.
+
 The complete public contract is maintained in [docs/api.md](docs/api.md). Event IDs are append-only and clients must not infer IDs from operation names.
 
 ## 8. Persistence and storage layout
@@ -114,9 +130,15 @@ datasource/memory/{profileId}/note/ and topics/
 datasource/knowledge/{profileId}/documents/ and index/
 datasource/skills/{profileId}/
 datasource/llm/
+datasource/workflow/{profileId}/{workflowId}.yaml
+datasource/workflow/{profileId}/artifacts/{artifactId}
 ```
 
 SQLite schema changes are applied through embedded, uniquely numbered migrations. File-backed data is profile-scoped. Search indexes are rebuildable from their source collections.
+
+Workflow files are versioned fixed-schema YAML. An active run stores an immutable definition copy, selected version, SHA-256 hash, ordered task snapshots, and bounded callback envelopes, so later definition edits cannot change execution. Artifact snapshots are immutable and retained independently of definition or run deletion. Conversation persistence adds a parent-child link while goal task state remains the source of workflow runtime and callback state.
+
+At startup, the application scans persisted goals for pending child runs and reconstructs child jobs from their immutable snapshots and stored token, avoiding duplication when a live job exists. A waiting parent is resumed from persisted continuation state after child completion; if its process is no longer alive, the continuation is queued or reconstructed. A child that exits without `agent.result` is marked failed with a protocol error, whereas a transient interruption remains pending for restart recovery.
 
 ## 9. Local LLM runtimes
 

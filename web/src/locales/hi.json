@@ -28,6 +28,7 @@
     "previous": "Previous page",
     "next": "Next page"
   },
+  "theme": { "toggle": "रंग योजना बदलें", "light": "लाइट", "dark": "डार्क" },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -171,7 +172,11 @@
     "modelSelect": "SELECT MODEL",
     "mainModel": "Main model",
     "goal": "Goal",
-    "goalHint": "Create an execution plan before processing this request"
+    "goalHint": "Create an execution plan before processing this request",
+    "modeHint": "इस अनुरोध का तरीका चुनें",
+    "modeTitle": "अनुरोध मोड",
+    "workflowSelect": "वर्कफ़्लो चुनें",
+    "mode": { "normal": "सामान्य", "plan": "योजना", "consult": "परामर्श", "workflow": "वर्कफ़्लो" }
   },
   "panel": {
     "ctx": "Session context",

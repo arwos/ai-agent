@@ -28,6 +28,11 @@
     "previous": "Previous page",
     "next": "Next page"
   },
+  "theme": {
+    "toggle": "Switch color scheme",
+    "light": "Light",
+    "dark": "Dark"
+  },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -171,7 +176,11 @@
     "modelSelect": "SELECT MODEL",
     "mainModel": "Main model",
     "goal": "Goal",
-    "goalHint": "Create an execution plan before processing this request"
+    "goalHint": "Create an execution plan before processing this request",
+    "modeHint": "Choose how this request should be handled",
+    "modeTitle": "REQUEST MODE",
+    "workflowSelect": "Select workflow",
+    "mode": { "normal": "Normal", "plan": "Plan", "consult": "Consult", "workflow": "Workflow" }
   },
   "panel": {
     "ctx": "Session context",

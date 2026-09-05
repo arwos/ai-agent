@@ -28,6 +28,7 @@
     "previous": "Previous page",
     "next": "Next page"
   },
+  "theme": { "toggle": "切换配色方案", "light": "浅色", "dark": "深色" },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -171,7 +172,11 @@
     "modelSelect": "SELECT MODEL",
     "mainModel": "Main model",
     "goal": "Goal",
-    "goalHint": "Create an execution plan before processing this request"
+    "goalHint": "Create an execution plan before processing this request",
+    "modeHint": "选择请求处理方式",
+    "modeTitle": "请求模式",
+    "workflowSelect": "选择工作流",
+    "mode": { "normal": "普通", "plan": "计划", "consult": "咨询", "workflow": "工作流" }
   },
   "panel": {
     "ctx": "Session context",

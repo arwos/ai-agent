@@ -136,4 +136,10 @@ const (
 	EventLlamaModelsList
 	EventLlamaModelPull
 	EventLlamaModelRemove
+	EventWorkflowList
+	EventWorkflowGet
+	EventWorkflowSave
+	EventWorkflowDelete
+	EventWorkflowImport
+	EventWorkflowExport
 )

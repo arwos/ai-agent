@@ -49,6 +49,171 @@ body {
   overflow: hidden;
 }
 
+/* High-contrast light palette. Keep the cool ARWOS accent colors, but use
+   opaque surfaces and a clear graphite/blue-gray text hierarchy. */
+html.theme-light {
+  --color-abyss-950: #dbe4ef;
+  --color-abyss-900: #f8fafc;
+  --color-abyss-850: #ffffff;
+  --color-abyss-800: #e2e8f0;
+  --color-abyss-700: #b8c5d6;
+}
+
+html.theme-light body {
+  color: #172033;
+}
+
+html.theme-light .bg-grid {
+  background-image:
+    linear-gradient(rgba(51, 65, 85, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 65, 85, 0.12) 1px, transparent 1px);
+}
+
+html.theme-light .glass {
+  background: #ffffff;
+  border-color: #aebdce;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+html.theme-light .border-white\/\[0\.06\],
+html.theme-light .border-white\/\[0\.08\],
+html.theme-light .border-white\/\[0\.09\],
+html.theme-light .border-white\/10,
+html.theme-light .border-white\/15,
+html.theme-light .border-transparent {
+  border-color: #b8c5d6;
+}
+
+html.theme-light .text-slate-100,
+html.theme-light .text-slate-200,
+html.theme-light .text-slate-300,
+html.theme-light .text-slate-400 {
+  color: #0f172a;
+}
+
+html.theme-light .text-slate-500 {
+  color: #475569;
+}
+
+html.theme-light .text-slate-600,
+html.theme-light .text-slate-700,
+html.theme-light .text-slate-800 {
+  color: #64748b;
+}
+
+html.theme-light .text-slate-50 {
+  color: #0f172a;
+}
+
+html.theme-light .text-white {
+  color: #0f172a;
+}
+
+/* Darken the pastel accent utilities that were chosen for the dark canvas. */
+html.theme-light .text-indigo-100,
+html.theme-light .text-indigo-200,
+html.theme-light .text-indigo-300 {
+  color: #3730a3;
+}
+
+html.theme-light .text-cyan-100,
+html.theme-light .text-cyan-200,
+html.theme-light .text-cyan-300 {
+  color: #0e7490;
+}
+
+html.theme-light .text-violet-100,
+html.theme-light .text-violet-200,
+html.theme-light .text-violet-300 {
+  color: #6d28d9;
+}
+
+html.theme-light .text-emerald-200,
+html.theme-light .text-emerald-300 {
+  color: #047857;
+}
+
+html.theme-light .text-amber-200,
+html.theme-light .text-amber-300 {
+  color: #a16207;
+}
+
+html.theme-light .text-rose-200,
+html.theme-light .text-rose-300 {
+  color: #be123c;
+}
+
+html.theme-light .placeholder\:text-slate-700::placeholder,
+html.theme-light .placeholder\:text-slate-600::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+html.theme-light .bg-white\/\[0\.015\],
+html.theme-light .bg-white\/\[0\.03\],
+html.theme-light .bg-white\/\[0\.05\],
+html.theme-light .bg-white\/\[0\.07\],
+html.theme-light .bg-white\/\[0\.08\],
+html.theme-light .hover\:bg-white\/5:hover,
+html.theme-light .hover\:bg-white\/\[0\.03\]:hover,
+html.theme-light .hover\:bg-white\/\[0\.05\]:hover,
+html.theme-light .hover\:bg-white\/\[0\.06\]:hover,
+html.theme-light .hover\:bg-white\/\[0\.07\]:hover {
+  background-color: #e8eef5;
+}
+
+html.theme-light .bg-abyss-900\/70,
+html.theme-light .bg-abyss-900\/75 {
+  background-color: rgba(243, 246, 250, 0.96);
+}
+
+html.theme-light .bg-abyss-850\/95,
+html.theme-light .bg-abyss-850\/98,
+html.theme-light .bg-abyss-850\/\[0\.98\] {
+  background-color: #ffffff;
+}
+
+html.theme-light .bg-black\/20,
+html.theme-light .bg-\[\#090d17\] {
+  background-color: #e2e8f0;
+}
+
+html.theme-light .markdown-content h1,
+html.theme-light .markdown-content h2,
+html.theme-light .markdown-content h3,
+html.theme-light .markdown-content h4,
+html.theme-light .markdown-content h5,
+html.theme-light .markdown-content h6,
+html.theme-light .markdown-content th {
+  color: #0f172a;
+}
+
+html.theme-light .markdown-content code {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.16);
+  color: #0e7490;
+}
+
+html.theme-light .markdown-content pre {
+  background: #e2e8f0;
+  border-color: #aebdce;
+}
+
+html.theme-light input,
+html.theme-light textarea,
+html.theme-light select {
+  background-color: #ffffff;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+html.theme-light input:focus,
+html.theme-light textarea:focus,
+html.theme-light select:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.18);
+}
+
 /* Keep browser text controls readable, especially URL values containing
    adjacent slashes. Code/editor areas can still opt into monospace styling. */
 input[type="text"],

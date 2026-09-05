@@ -35,6 +35,7 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/toolexecutor"
 	"github.com/arwos/ai-agent/internal/pkg/updater"
 	"github.com/arwos/ai-agent/internal/pkg/version"
+	"github.com/arwos/ai-agent/internal/pkg/workflow"
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
 
@@ -72,6 +73,7 @@ type App struct {
 	llmRootCtx     context.Context
 	llmRuntimeStop map[string]context.CancelFunc
 	backgroundJobs *jobs.Registry
+	workflows      *workflow.Service
 }
 
 // pendingRequest belongs to a dialog, not a browser connection. This lets a
@@ -145,6 +147,7 @@ func NewApp(
 	llamaService *llama.Service,
 	systemInfoService *systeminfo.Service,
 	backgroundJobs *jobs.Registry,
+	workflows *workflow.Service,
 ) (*App, error) {
 	route, ok := routes.Main()
 	if !ok {
@@ -170,6 +173,7 @@ func NewApp(
 		llama:          llamaService,
 		systemInfo:     systemInfoService,
 		backgroundJobs: backgroundJobs,
+		workflows:      workflows,
 		route:          route,
 		wss:            wss,
 		pickJobs:       make(map[string]*pickJob),
@@ -234,6 +238,8 @@ type chatWebSocketInput struct {
 	ErrorMessageID string   `json:"errorMessageId"`
 	Model          string   `json:"model"`
 	AsGoal         bool     `json:"asGoal"`
+	Mode           string   `json:"mode"`
+	WorkflowID     string   `json:"workflowId"`
 	ReqID          string   `json:"reqId"`
 	Value          any      `json:"value"`
 }
@@ -359,6 +365,8 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 		"skills":       input.SkillNames,
 		"model":        input.Model,
 		"asGoal":       input.AsGoal,
+		"mode":         input.Mode,
+		"workflow_id":  input.WorkflowID,
 	}
 	if err := ev.Encode(payload); err != nil {
 		logx.Error("websocket response encode failed", "event_id", ev.ID(), "err", err)
@@ -367,7 +375,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 	// A running chat belongs to a dialog rather than a WebSocket connection.
 	// This keeps it alive across a browser reload while preventing concurrent
 	// requests from corrupting one conversation's JSONL history.
-	query := chatSendQuery{DialogID: input.ConvID, AgentID: input.AgentID, WorkspaceID: input.WorkspaceID, Content: input.Text, Model: input.Model, Skills: append([]string(nil), input.SkillNames...), Resume: input.Type == "user.continue", ErrorMessageID: input.ErrorMessageID, AsGoal: input.AsGoal}
+	query := chatSendQuery{DialogID: input.ConvID, AgentID: input.AgentID, WorkspaceID: input.WorkspaceID, Content: input.Text, Model: input.Model, Skills: append([]string(nil), input.SkillNames...), Resume: input.Type == "user.continue", ErrorMessageID: input.ErrorMessageID, AsGoal: input.AsGoal, Mode: input.Mode, WorkflowID: input.WorkflowID}
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &chatJob{cancel: cancel, done: make(chan struct{})}
 	a.chatMu.Lock()
@@ -535,6 +543,12 @@ func (a *App) Up(ctx context.Context) error {
 	a.wss.SetEventHandler(a.llamaModelPull, EventLlamaModelPull)
 	a.wss.SetEventHandler(a.llamaModelRemove, EventLlamaModelRemove)
 	a.wss.SetEventHandler(a.handleWebSocketInput, StreamInputEventID)
+	a.wss.SetEventHandler(a.workflowList, EventWorkflowList)
+	a.wss.SetEventHandler(a.workflowGet, EventWorkflowGet)
+	a.wss.SetEventHandler(a.workflowSave, EventWorkflowSave)
+	a.wss.SetEventHandler(a.workflowDelete, EventWorkflowDelete)
+	a.wss.SetEventHandler(a.workflowImport, EventWorkflowImport)
+	a.wss.SetEventHandler(a.workflowExport, EventWorkflowExport)
 
 	// React/Vite SPA and its static assets. The not-found handler covers every
 	// client-side route while ApiIndex keeps /api/* and missing static files 404.

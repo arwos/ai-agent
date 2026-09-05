@@ -18,10 +18,10 @@ import (
 func (s *Store) Conversations(profileID, workspaceID string) ([]models.Conversation, error) {
 	out := make([]models.Conversation, 0)
 	e := s.db.Query(context.Background(), "configstore.conversations", func(q orm.Querier) {
-		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model FROM conversations WHERE profile_id=? AND workspace_id=? ORDER BY updated_at DESC`, profileID, workspaceID)
+		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model,parent_id FROM conversations WHERE profile_id=? AND workspace_id=? ORDER BY updated_at DESC`, profileID, workspaceID)
 		q.Bind(func(r orm.Scanner) error {
 			var x models.Conversation
-			if e := r.Scan(&x.ID, &x.ProfileID, &x.WorkspaceID, &x.AgentID, &x.Title, &x.UpdatedAt, &x.ActiveModel); e != nil {
+			if e := r.Scan(&x.ID, &x.ProfileID, &x.WorkspaceID, &x.AgentID, &x.Title, &x.UpdatedAt, &x.ActiveModel, &x.ParentID); e != nil {
 				return e
 			}
 			out = append(out, x)
@@ -36,10 +36,10 @@ func (s *Store) Conversations(profileID, workspaceID string) ([]models.Conversat
 func (s *Store) ProfileConversations(profileID string) ([]models.Conversation, error) {
 	out := make([]models.Conversation, 0)
 	e := s.db.Query(context.Background(), "configstore.profile.conversations", func(q orm.Querier) {
-		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model FROM conversations WHERE profile_id=?`, profileID)
+		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model,parent_id FROM conversations WHERE profile_id=?`, profileID)
 		q.Bind(func(r orm.Scanner) error {
 			var x models.Conversation
-			if e := r.Scan(&x.ID, &x.ProfileID, &x.WorkspaceID, &x.AgentID, &x.Title, &x.UpdatedAt, &x.ActiveModel); e != nil {
+			if e := r.Scan(&x.ID, &x.ProfileID, &x.WorkspaceID, &x.AgentID, &x.Title, &x.UpdatedAt, &x.ActiveModel, &x.ParentID); e != nil {
 				return e
 			}
 			out = append(out, x)
@@ -52,9 +52,9 @@ func (s *Store) ProfileConversations(profileID string) ([]models.Conversation, e
 func (s *Store) Conversation(profileID, id string) (models.Conversation, error) {
 	var out models.Conversation
 	err := s.db.Query(context.Background(), "configstore.conversation", func(q orm.Querier) {
-		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model FROM conversations WHERE profile_id=? AND id=?`, profileID, id)
+		q.SQL(`SELECT id,profile_id,workspace_id,agent_id,title,updated_at,active_model,parent_id FROM conversations WHERE profile_id=? AND id=?`, profileID, id)
 		q.Bind(func(r orm.Scanner) error {
-			return r.Scan(&out.ID, &out.ProfileID, &out.WorkspaceID, &out.AgentID, &out.Title, &out.UpdatedAt, &out.ActiveModel)
+			return r.Scan(&out.ID, &out.ProfileID, &out.WorkspaceID, &out.AgentID, &out.Title, &out.UpdatedAt, &out.ActiveModel, &out.ParentID)
 		})
 	})
 	if err == nil && out.ID == "" {
@@ -71,7 +71,7 @@ func (s *Store) ConversationUpsert(x models.Conversation) (models.Conversation, 
 	}
 	x.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	e := s.db.Exec(context.Background(), "configstore.conversation.upsert", func(q orm.Executor) {
-		q.SQL(`INSERT INTO conversations(id,profile_id,workspace_id,agent_id,title,updated_at,active_model) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET agent_id=excluded.agent_id,title=excluded.title,updated_at=excluded.updated_at,active_model=CASE WHEN excluded.active_model='' THEN conversations.active_model ELSE excluded.active_model END`, x.ID, x.ProfileID, x.WorkspaceID, x.AgentID, x.Title, x.UpdatedAt, x.ActiveModel)
+		q.SQL(`INSERT INTO conversations(id,profile_id,workspace_id,agent_id,title,updated_at,active_model,parent_id) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET agent_id=excluded.agent_id,title=excluded.title,updated_at=excluded.updated_at,parent_id=CASE WHEN excluded.parent_id='' THEN conversations.parent_id ELSE excluded.parent_id END,active_model=CASE WHEN excluded.active_model='' THEN conversations.active_model ELSE excluded.active_model END`, x.ID, x.ProfileID, x.WorkspaceID, x.AgentID, x.Title, x.UpdatedAt, x.ActiveModel, x.ParentID)
 	})
 	return x, e
 }

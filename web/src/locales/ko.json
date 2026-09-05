@@ -28,6 +28,7 @@
     "previous": "Previous page",
     "next": "Next page"
   },
+  "theme": { "toggle": "색상 테마 전환", "light": "라이트", "dark": "다크" },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -171,7 +172,11 @@
     "modelSelect": "SELECT MODEL",
     "mainModel": "Main model",
     "goal": "Goal",
-    "goalHint": "Create an execution plan before processing this request"
+    "goalHint": "Create an execution plan before processing this request",
+    "modeHint": "요청 처리 방식을 선택하세요",
+    "modeTitle": "요청 모드",
+    "workflowSelect": "워크플로 선택",
+    "mode": { "normal": "일반", "plan": "계획", "consult": "상담", "workflow": "워크플로" }
   },
   "panel": {
     "ctx": "Session context",

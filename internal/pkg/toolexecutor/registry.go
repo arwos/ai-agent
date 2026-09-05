@@ -53,6 +53,7 @@ type Scope struct {
 	MCPCall     func(context.Context, MCPTool, map[string]any) (any, error)
 	Request     func(context.Context, map[string]any) (any, error)
 	GoalUpdate  func(context.Context, map[string]any) (any, error)
+	Mode        string
 }
 
 type MCPTool struct{ ServerName, ToolName string }
@@ -131,6 +132,9 @@ func (r *Registry) Builtins() []BuiltinServer {
 }
 
 func (r *Registry) Execute(ctx context.Context, scope Scope, name string, args map[string]any) (string, error) {
+	if scope.Mode == "consult" && !consultTool(name) {
+		return "", fmt.Errorf("tool %q is not available in consult mode", name)
+	}
 	aliased := false
 	if target, exists := scope.Aliases[name]; exists {
 		name = target
@@ -177,6 +181,13 @@ func (r *Registry) Execute(ctx context.Context, scope Scope, name string, args m
 		return "", err
 	}
 	return marshal(value)
+}
+
+func consultTool(name string) bool {
+	if target, ok := map[string]string{"fs.list_dir": "fs.list_dir", "fs.read_file": "fs.read_file", "fs.file_info": "fs.file_info", "fs.grep": "fs.grep", "git.status": "git.status", "git.diff": "git.diff", "git.log": "git.log"}[name]; ok {
+		return target != ""
+	}
+	return false
 }
 
 func (r *Registry) Prompt(extra []Tool) string {

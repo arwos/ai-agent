@@ -39,6 +39,27 @@ type chatSendQuery struct {
 	Resume         bool     `json:"resume"`
 	ErrorMessageID string   `json:"errorMessageId"`
 	AsGoal         bool     `json:"asGoal"`
+	Mode           string   `json:"mode"`
+	WorkflowID     string   `json:"workflow_id"`
+}
+
+func validateChatMode(mode, workflowID string, asGoal bool) error {
+	if mode == "" {
+		mode = "normal"
+	}
+	if mode != "normal" && mode != "plan" && mode != "consult" && mode != "workflow" {
+		return fmt.Errorf("invalid chat mode %q", mode)
+	}
+	if mode == "workflow" && strings.TrimSpace(workflowID) == "" {
+		return fmt.Errorf("workflow_id is required in workflow mode")
+	}
+	if mode != "workflow" && workflowID != "" {
+		return fmt.Errorf("workflow_id is only valid in workflow mode")
+	}
+	if asGoal && mode == "normal" {
+		return nil
+	}
+	return nil
 }
 
 func (a *App) chatSend(ev event.Event, meta ws.Meta) error {
@@ -203,6 +224,18 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	if q.DialogID == "" || (!q.Resume && q.Content == "") {
 		return fmt.Errorf("dialog_id and content are required")
 	}
+	if q.Mode == "" {
+		// Older clients used asGoal for the planning flow. An explicitly
+		// supplied mode always takes precedence over that compatibility flag.
+		if q.AsGoal {
+			q.Mode = "plan"
+		} else {
+			q.Mode = "normal"
+		}
+	}
+	if err := validateChatMode(q.Mode, q.WorkflowID, q.AsGoal); err != nil {
+		return err
+	}
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
@@ -362,6 +395,39 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 		extraTools, mcpBindings = mcp.AgentTools(servers, selectedMCPIDs)
 	}
+	if q.Mode == "consult" {
+		allowed := map[string]bool{"fs.list_dir": true, "fs.read_file": true, "fs.file_info": true, "fs.grep": true, "git.status": true, "git.diff": true, "git.log": true}
+		filtered := extraTools[:0]
+		for _, tool := range extraTools {
+			if allowed[tool.Name] {
+				filtered = append(filtered, tool)
+			}
+		}
+		extraTools = filtered
+		for name := range mcpBindings {
+			if !allowed[name] {
+				delete(mcpBindings, name)
+			}
+		}
+	}
+	system += prompts.Mode(q.Mode)
+	if q.Mode == "workflow" {
+		if a.workflows == nil {
+			return fmt.Errorf("workflow service unavailable")
+		}
+		definition, workflowErr := a.workflows.Get(profileID, q.WorkflowID)
+		if workflowErr != nil {
+			return fmt.Errorf("load workflow: %w", workflowErr)
+		}
+		if !definition.Enabled {
+			return fmt.Errorf("workflow %q is disabled", q.WorkflowID)
+		}
+		encoded, marshalErr := json.Marshal(definition)
+		if marshalErr != nil {
+			return fmt.Errorf("encode workflow: %w", marshalErr)
+		}
+		system += "\nSelected workflow definition (follow its fixed order and contracts):\n" + string(encoded) + "\n"
+	}
 	if builtins, builtinErr := a.builtinMCP(profileID); builtinErr == nil {
 		selected := make(map[string]bool, len(selectedMCPIDs))
 		for _, id := range selectedMCPIDs {
@@ -386,6 +452,22 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			extraTools = append(extraTools, tools...)
 			for alias, target := range aliases {
 				builtinAliases[alias], builtinAllowed[target] = target, true
+			}
+		}
+	}
+	if q.Mode == "consult" {
+		allowed := map[string]bool{"fs.list_dir": true, "fs.read_file": true, "fs.file_info": true, "fs.grep": true, "git.status": true, "git.diff": true, "git.log": true}
+		filtered := extraTools[:0]
+		for _, tool := range extraTools {
+			if allowed[tool.Name] {
+				filtered = append(filtered, tool)
+			}
+		}
+		extraTools = filtered
+		for alias, target := range builtinAliases {
+			if !allowed[alias] && !allowed[target] {
+				delete(builtinAliases, alias)
+				delete(builtinAllowed, target)
 			}
 		}
 	}
@@ -462,12 +544,38 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		publishGoal(activeGoal)
 	}
 	planningUsage := llm.Usage{}
-	if q.AsGoal && !q.Resume {
+	if q.Mode == "plan" && !q.Resume {
 		activeGoal, planningUsage = goalPlan(ctx, provider, publicDialogID, q.Content, extraTools)
+		activeGoal.Status = "awaiting_approval"
 		if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
 			return fmt.Errorf("save dialog goal: %w", saveErr)
 		}
 		publishGoal(activeGoal)
+		approvalID := streamMessageID()
+		activeGoal.Approval = &goal.GoalApproval{ID: approvalID, Kind: "approval", Title: "Approve execution plan", Detail: activeGoal.Goal, Command: "goal.start", CreatedAt: time.Now().UTC()}
+		if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
+			return fmt.Errorf("save plan approval: %w", saveErr)
+		}
+		publishGoal(activeGoal)
+		answer, approvalErr := a.requestUser(ctx, connectionID, publicDialogID, map[string]any{"reqId": approvalID, "kind": "approval", "title": "Approve execution plan", "detail": activeGoal.Goal, "command": "goal.start"})
+		if approvalErr != nil {
+			return approvalErr
+		}
+		accepted, ok := answer.(bool)
+		if !ok || !accepted {
+			activeGoal.Status = "paused"
+			activeGoal.Approval = nil
+			if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
+				return saveErr
+			}
+			publishGoal(activeGoal)
+			return nil
+		}
+		activeGoal.Status = "running"
+		activeGoal.Approval = nil
+		if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
+			return saveErr
+		}
 	}
 	if activeGoal != nil {
 		tasks := make([]string, 0, len(activeGoal.Tasks))
@@ -476,7 +584,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 		system += prompts.GoalExecution(activeGoal.Goal, tasks)
 	}
-	engine := a.engines.Acquire(provider, appToolExecutor{registry: a.tools, scope: toolexecutor.Scope{WorkspaceID: q.WorkspaceID, ProfileID: profileID, DialogID: q.DialogID, MCPTools: mcpBindings, Aliases: builtinAliases, Allowed: builtinAllowed, MCPCall: a.callMCPTool, Request: func(ctx context.Context, args map[string]any) (any, error) {
+	engine := a.engines.Acquire(provider, appToolExecutor{registry: a.tools, scope: toolexecutor.Scope{WorkspaceID: q.WorkspaceID, ProfileID: profileID, DialogID: q.DialogID, MCPTools: mcpBindings, Aliases: builtinAliases, Allowed: builtinAllowed, Mode: q.Mode, MCPCall: a.callMCPTool, Request: func(ctx context.Context, args map[string]any) (any, error) {
 		return a.requestUser(ctx, connectionID, publicDialogID, args)
 	}}}, a.dialogs, system)
 	engine.Model = model

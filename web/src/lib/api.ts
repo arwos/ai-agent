@@ -81,6 +81,38 @@ export type GoalState = {
   updatedAt?: string;
 };
 
+export type WorkflowInput = {
+  name: string;
+  ref: "user_request" | "previous_result" | "artifact_id" | "workspace_path";
+  literal?: string;
+};
+
+export type WorkflowSubstep = { id: string; title: string; description?: string };
+
+export type WorkflowStep = {
+  id: string;
+  title: string;
+  description: string;
+  substeps?: WorkflowSubstep[];
+  inputs?: WorkflowInput[];
+  outputs?: string[];
+  validation?: string;
+  required_tools?: string[];
+  required_skills?: string[];
+  executor?: "self" | "agent_id" | "auto";
+  retry?: { maxAttempts: number };
+};
+
+export type Workflow = {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  enabled: boolean;
+  steps: WorkflowStep[];
+  contentHash?: string;
+};
+
 export type BgTask = { id: string; label: string; progress: number };
 
 export type ChatSocket = { send: (frame: Record<string, unknown>) => void; close: () => void };
@@ -116,6 +148,13 @@ export const WS_EVENT_LLAMA_MODELS_LIST: WsEvent = 130;
 export const WS_EVENT_LLAMA_MODEL_PULL: WsEvent = 131;
 
 export const WS_EVENT_LLAMA_MODEL_REMOVE: WsEvent = 132;
+
+export const WS_EVENT_WORKFLOW_LIST: WsEvent = 139;
+export const WS_EVENT_WORKFLOW_GET: WsEvent = 140;
+export const WS_EVENT_WORKFLOW_SAVE: WsEvent = 141;
+export const WS_EVENT_WORKFLOW_DELETE: WsEvent = 142;
+export const WS_EVENT_WORKFLOW_IMPORT: WsEvent = 143;
+export const WS_EVENT_WORKFLOW_EXPORT: WsEvent = 144;
 
 class SocketTransport {
   private socket: WebSocket | null = null;
@@ -229,6 +268,13 @@ export function wsRequest<T = unknown>(event: WsEvent, params: Record<string, un
 export function sendChat(frame: Record<string, unknown>): void {
   transport.sendChat(frame);
 }
+
+export const listWorkflows = () => wsRequest<Workflow[]>(WS_EVENT_WORKFLOW_LIST);
+export const getWorkflow = (id: string) => wsRequest<Workflow>(WS_EVENT_WORKFLOW_GET, { id });
+export const saveWorkflow = (workflow: Workflow) => wsRequest<Workflow>(WS_EVENT_WORKFLOW_SAVE, workflow as unknown as Record<string, unknown>);
+export const deleteWorkflow = (id: string) => wsRequest<void>(WS_EVENT_WORKFLOW_DELETE, { id });
+export const importWorkflow = (content: string) => wsRequest<Workflow>(WS_EVENT_WORKFLOW_IMPORT, { content });
+export const exportWorkflow = (id: string) => wsRequest<{ content: string }>(WS_EVENT_WORKFLOW_EXPORT, { id });
 
 const accent = (value: string): Skill["accent"] =>
   ["indigo", "cyan", "violet", "emerald", "amber"].includes(value) ? (value as Skill["accent"]) : "indigo";

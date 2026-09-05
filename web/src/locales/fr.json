@@ -28,6 +28,7 @@
     "previous": "Page précédente",
     "next": "Page suivante"
   },
+  "theme": { "toggle": "Changer le thème", "light": "Clair", "dark": "Sombre" },
   "memory": {
     "title": "MÉMOIRE",
     "notes": "Notes à long terme",
@@ -171,7 +172,11 @@
     "modelSelect": "SÉLECTIONNER UN MODÈLE",
     "mainModel": "Modèle principal",
     "goal": "Objectif",
-    "goalHint": "Créer un plan d’exécution avant de traiter cette demande"
+    "goalHint": "Créer un plan d’exécution avant de traiter cette demande",
+    "modeHint": "Choisir le mode de traitement",
+    "modeTitle": "MODE DE DEMANDE",
+    "workflowSelect": "Choisir un processus",
+    "mode": { "normal": "Normal", "plan": "Plan", "consult": "Consultation", "workflow": "Processus" }
   },
   "panel": {
     "ctx": "Contexte de session",

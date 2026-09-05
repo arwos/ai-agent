@@ -20,6 +20,7 @@ The application runs as a single Go service with an embedded React frontend. Bro
 - UI localization in Bengali, English, Spanish, French, Hindi, Italian, Korean, Portuguese, Russian, and Chinese.
 - Local-runtime installation, model download, start controls, system information, and self-update controls.
 - Import and export of profile settings with Base64-encoded secrets.
+- Per-message agent modes for normal execution, planning, read-only consultation, and predefined workflows.
 
 ## Contents
 
@@ -107,6 +108,19 @@ Provider model names use the public form `<model>@<provider>`; the backend resol
 
 Enable **Goal** in the composer to ask the active model for an execution plan before processing a request. The plan is stored separately from chat history. Actual tool calls update task status, results, errors, attempts, dependencies, and timestamps. When all executable tasks finish, the backend asks for completion approval; declining starts a verification pass.
 
+### Agent modes
+
+Modes are selected per message and are not stored on the agent profile:
+
+- `normal` is the default unrestricted conversation mode. `asGoal` remains a compatibility input for the existing goal lifecycle when no explicit mode is supplied.
+- `plan` creates a detailed goal plan, waits for user approval, and executes only after approval. A pre-approval delegated child is read-only.
+- `consult` investigates and answers without write or destructive operations. Its only workspace/Git tools are `fs.list_dir`, `fs.read_file`, `fs.file_info`, `fs.grep`, `git.status`, `git.diff`, and `git.log`; MCP and other tools are excluded.
+- `workflow` runs a selected, profile-scoped YAML definition. The definition fixes step order, inputs, outputs, storage, validation, capabilities, delegation policy, and retry limits. The main model expands it into a goal plan, but no execution or side effect occurs before approval.
+
+Goals remain the runtime state for a request. Workflow steps are copied into the goal as an immutable run snapshot; descriptive substeps are instructions within a step, not separate tasks. Workflow failures are returned to the main model for review, alternate delegation, or a bounded retry. There is no hidden automatic retry.
+
+Delegated agents run in separate persisted child conversations linked to the parent. A child cannot delegate again and must return its result through the `agent.result` callback. The callback uses a one-time run token and is checked against the profile, parent, child, task, and completion state. Pending parent and child state survives service restart; a pending child is reconstructed from its immutable snapshot, and duplicate or late callbacks are rejected.
+
 ### Skills, knowledge, and memory
 
 Skills can be created manually, discovered, and imported from user-selected directories, Git repositories, and supported archives. They can also be organized into groups. Knowledge documents and profile memory are indexed locally with Bleve. Knowledge and memory search are explicit agent tools and are not silently injected into every prompt.
@@ -158,6 +172,8 @@ datasource/memory/<profileId>/topics/
 datasource/knowledge/<profileId>/documents/
 datasource/knowledge/<profileId>/index/
 datasource/skills/<profileId>/
+datasource/workflow/<profileId>/<workflowId>.yaml
+datasource/workflow/<profileId>/artifacts/<artifactId>
 ```
 
 `goals.jsonl` contains the latest append-only snapshot for each goal in a conversation. SQLite migrations are embedded into the binary and installed through goppy ORM migration support. Applied migrations must not be edited; add a new numbered migration when a schema change is required.
@@ -176,7 +192,7 @@ The current frontend sends chat input and interaction responses through the lega
 {"e":2,"d":{"type":"user.message","convId":"conversation-1","workspaceId":"workspace-1","text":"Inspect this project","asGoal":true}}
 ```
 
-The RPC chat endpoint is event `75` and accepts the snake_case request fields documented in [docs/api.md](docs/api.md). Streaming event `1` carries typed payloads such as `status`, `msg.start`, `reasoning`, `chunk`, `tool_call`, `request`, `goal`, `error`, and `done`. See [docs/api.md](docs/api.md) for the event catalog and payloads.
+The RPC chat endpoint is event `75` and accepts the snake_case request fields documented in [docs/api.md](docs/api.md), including the intended per-message `mode` and `workflow_id` fields. Streaming event `1` carries typed payloads such as `status`, `msg.start`, `reasoning`, `chunk`, `tool_call`, `request`, `goal`, `error`, and `done`; child progress is identified by its child `dialog_id` and may also be surfaced as parent-scoped background/subagent progress. See [docs/api.md](docs/api.md) for the event catalog, mode contract, and MCP payloads.
 
 ## Development
 

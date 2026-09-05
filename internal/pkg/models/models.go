@@ -193,4 +193,5 @@ type Conversation struct {
 	UpdatedAt   string `json:"updatedAt"`
 	ActiveModel string `json:"activeModel"`
 	Count       int    `json:"count"`
+	ParentID    string `json:"parentId,omitempty"`
 }

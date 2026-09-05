@@ -28,6 +28,7 @@
     "previous": "Previous page",
     "next": "Next page"
   },
+  "theme": { "toggle": "Alternar esquema de cores", "light": "Claro", "dark": "Escuro" },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -171,7 +172,11 @@
     "modelSelect": "SELECT MODEL",
     "mainModel": "Main model",
     "goal": "Goal",
-    "goalHint": "Create an execution plan before processing this request"
+    "goalHint": "Create an execution plan before processing this request",
+    "modeHint": "Escolha como tratar este pedido",
+    "modeTitle": "MODO DO PEDIDO",
+    "workflowSelect": "Selecionar fluxo",
+    "mode": { "normal": "Normal", "plan": "Plano", "consult": "Consulta", "workflow": "Fluxo" }
   },
   "panel": {
     "ctx": "Session context",

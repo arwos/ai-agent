@@ -22,6 +22,7 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/systeminfo"
 	"github.com/arwos/ai-agent/internal/pkg/toolexecutor"
 	"github.com/arwos/ai-agent/internal/pkg/updater"
+	"github.com/arwos/ai-agent/internal/pkg/workflow"
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
 
@@ -37,6 +38,7 @@ var Plugins = plugin.Inject(
 	skills.WithPlugin(),
 	skills.RegisterTools,
 	dialog.WithPlugin(),
+	workflow.WithPlugin(),
 	dialog.NewRegistry,
 	mcp.New,
 	proxy.New,

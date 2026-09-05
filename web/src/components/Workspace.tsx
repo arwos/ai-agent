@@ -36,7 +36,7 @@ import {
 import { fmtSize } from "../lib/data";
 import type { LiveAgent, Preset, SkillGroup, WorkspaceFile } from "../lib/data";
 import { wsRequest } from "../lib/api";
-import type { AgentRequest, BgTask, GoalState } from "../lib/api";
+import type { AgentRequest, BgTask, GoalState, Workflow } from "../lib/api";
 import { useT } from "../lib/i18n";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -428,7 +428,8 @@ type InputProps = {
   agent: LiveAgent;
   busy: boolean;
   disabled?: boolean;
-  onSend: (text: string, files: string[], skillIds: string[], asGoal: boolean) => void;
+  onSend: (text: string, files: string[], skillIds: string[], mode: AgentMode, workflowId?: string) => void;
+  workflows?: Workflow[];
   draft: { text: string; nonce: number } | null;
   skillGroups: SkillGroup[];
   presets: Preset[];
@@ -439,11 +440,14 @@ type InputProps = {
   onStop: () => void;
 };
 
+export type AgentMode = "normal" | "plan" | "consult" | "workflow";
+
 export function InputBar({
   agent,
   busy,
   disabled = false,
   onSend,
+  workflows = [],
   draft,
   skillGroups,
   presets,
@@ -457,7 +461,9 @@ export function InputBar({
   const [text, setText] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const [skillGroupIds, setSkillGroupIds] = useState<string[]>([]);
-  const [asGoal, setAsGoal] = useState(false);
+  const [mode, setMode] = useState<AgentMode>("normal");
+  const [workflowId, setWorkflowId] = useState("");
+  const [modesOpen, setModesOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
@@ -497,13 +503,14 @@ export function InputBar({
     const tl = text.trim();
     if ((!tl && files.length === 0) || busy || disabled) return;
     const skillIds = [...new Set(skillGroups.filter((group) => skillGroupIds.includes(group.id)).flatMap((group) => group.skillIds))];
-    onSend(tl, files, skillIds, asGoal);
+    onSend(tl, files, skillIds, mode, workflowId || undefined);
     setText("");
     setFiles([]);
     // Skill selection belongs to one message only. Do not carry it over to
     // the next prompt after the current message has been submitted.
     setSkillGroupIds([]);
-    setAsGoal(false);
+    setMode("normal");
+    setWorkflowId("");
     const el = taRef.current;
     if (el) el.style.height = "auto";
   };
@@ -652,16 +659,24 @@ export function InputBar({
               )}
             </AnimatePresence>
           </div>
-          <button
-            type="button"
-            onClick={() => setAsGoal((value) => !value)}
-            className={`flex h-7 items-center gap-1 rounded-md px-2 text-[10px] transition-colors ${asGoal ? "bg-cyan-400/[0.12] text-cyan-200" : "text-slate-500 hover:bg-white/5 hover:text-slate-100"}`}
-            title={t("input.goalHint")}
-            aria-pressed={asGoal}
-          >
-            <Layers size={12} className={asGoal ? "text-cyan-300" : ""} />
-            <span>{t("input.goal")}</span>
-          </button>
+          <div className="relative shrink-0">
+            <button type="button" onClick={() => { setModesOpen((value) => !value); setPresetsOpen(false); setSkillsOpen(false); setModelsOpen(false); }} className={`flex h-7 items-center gap-1 rounded-md px-2 text-[10px] transition-colors ${mode !== "normal" ? "bg-cyan-400/[0.12] text-cyan-200" : "text-slate-500 hover:bg-white/5 hover:text-slate-100"}`} title={t("input.modeHint")} aria-expanded={modesOpen}>
+              <Layers size={12} className={mode !== "normal" ? "text-cyan-300" : ""} />
+              <span>{t(`input.mode.${mode}`)}</span><ChevronDown size={10} />
+            </button>
+            <AnimatePresence>
+              {modesOpen && <>
+                <div className="fixed inset-0 z-20" onClick={() => setModesOpen(false)} />
+                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-full left-0 z-30 mb-2 w-56 rounded-xl border border-white/10 bg-abyss-850/98 p-2 shadow-2xl backdrop-blur-2xl">
+                  <p className="px-3 pb-1.5 pt-1 font-mono text-[9px] tracking-[0.24em] text-slate-600">{t("input.modeTitle")}</p>
+                  {(["normal", "plan", "consult", "workflow"] as AgentMode[]).map((option) => <button key={option} type="button" onClick={() => { setMode(option); setModesOpen(false); if (option !== "workflow") setWorkflowId(""); }} className={`block w-full rounded-lg px-3 py-2 text-left text-[11px] ${mode === option ? "bg-cyan-400/[0.1] text-cyan-200" : "text-slate-300 hover:bg-white/[0.05]"}`}>{t(`input.mode.${option}`)}</button>)}
+                  {mode === "workflow" && <select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-abyss-900 px-2 py-1.5 text-[10px] text-slate-300" aria-label={t("input.workflowSelect")}>
+                    <option value="">{t("input.workflowSelect")}</option>{workflows.filter((workflow) => workflow.enabled).map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+                  </select>}
+                </motion.div>
+              </>}
+            </AnimatePresence>
+          </div>
         </div>
         <div
           className="rounded-xl p-px transition-[box-shadow] duration-300"
