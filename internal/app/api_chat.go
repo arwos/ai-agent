@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -205,7 +206,8 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
-	if _, e := a.workspaces.Get(q.WorkspaceID); e != nil {
+	workspaceService, e := a.workspaces.Get(q.WorkspaceID)
+	if e != nil {
 		return e
 	}
 	publicDialogID := q.DialogID
@@ -389,6 +391,11 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	}
 	if workspaceAccess {
 		system += prompts.WorkspaceAccess
+		gitBranch := ""
+		if head, headErr := workspaceService.ReadFile(".git/HEAD"); headErr == nil {
+			gitBranch = strings.TrimPrefix(strings.TrimSpace(head), "ref: refs/heads/")
+		}
+		system += prompts.Environment(q.WorkspaceID, workspaceService.Path, runtime.GOOS+"/"+runtime.GOARCH, time.Now().UTC().Format("2006-01-02"), gitBranch)
 	}
 	if a.tools != nil {
 		system += a.tools.Prompt(extraTools)
@@ -479,10 +486,8 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	for _, tool := range extraTools {
 		engine.ToolDefinitions = append(engine.ToolDefinitions, llm.ToolDefinition{Name: tool.Name, Description: tool.Description, Parameters: tool.InputSchema})
 	}
-	if workspaceService, workspaceErr := a.workspaces.Get(q.WorkspaceID); workspaceErr == nil {
-		if instructions, readErr := workspaceService.ReadFile("AGENTS.md"); readErr == nil && strings.TrimSpace(instructions) != "" {
-			engine.SystemContext = "Repository instructions from the active workspace root (AGENTS.md):\n\n" + instructions
-		}
+	if instructions, readErr := workspaceService.ReadFile("AGENTS.md"); readErr == nil && strings.TrimSpace(instructions) != "" {
+		engine.SystemContext = "Repository instructions from the active workspace root (AGENTS.md):\n\n" + instructions
 	}
 	defer a.engines.Release(engine)
 	engine.OnTool = func(toolModel, toolProvider, name string, args map[string]any, result string, x error) {

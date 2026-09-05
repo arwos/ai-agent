@@ -14,3 +14,11 @@ func TestCompactionSystemForIncludesLevelAndOutputRules(t *testing.T) {
 		t.Fatalf("missing output rules: %q", system)
 	}
 }
+
+func TestEnvironmentIncludesGitBranchOnlyWhenKnown(t *testing.T) {
+	with := Environment("ws", "/tmp/ws", "linux/amd64", "2026-09-05", "main")
+	without := Environment("ws", "/tmp/ws", "linux/amd64", "2026-09-05", "")
+	if !strings.Contains(with, "- Git branch: main") || strings.Contains(without, "Git branch") {
+		t.Fatalf("with=%q without=%q", with, without)
+	}
+}

@@ -77,6 +77,14 @@ func SkillCatalog(items []string) string {
 }
 func ToolResult(name, result string) string { return fmt.Sprintf(ToolResultTemplate, name, result) }
 
+func Environment(id, path, goos, date, gitBranch string) string {
+	out := fmt.Sprintf("\n\n## Environment\n- Workspace ID: %s\n- Working directory (CWD): %s\n- OS: %s\n- Current date (UTC): %s", id, path, goos, date)
+	if gitBranch != "" {
+		out += "\n- Git branch: " + gitBranch
+	}
+	return out + "\nAll workspace tool paths are relative to the working directory."
+}
+
 func GoalPlanningRequest(request string) string {
 	return fmt.Sprintf("Create an execution plan for this user request. Return only JSON in exactly this form: {\"goal\":\"short title\",\"tasks\":[{\"label\":\"concrete step\",\"tools\":[\"exact.tool.name\"],\"dependsOn\":[]}]}. Include 2 to 8 actionable tasks in their intended order. Put exact tool names required for each task in tools when known; use an empty array when no tool is needed. Use task numbers as strings in dependsOn only when a dependency is essential. Do not add ids, statuses, Markdown, prose, or facts not present in the request. User request:\n%s", request)
 }
