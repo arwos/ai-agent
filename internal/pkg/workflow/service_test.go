@@ -13,6 +13,32 @@ func TestValidateWorkflowSchema(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsDisabledEmptyDraft(t *testing.T) {
+	d := Definition{ID: "draft", Name: "Draft", Enabled: false}
+	if err := Validate(d); err != nil {
+		t.Fatalf("disabled empty draft rejected: %v", err)
+	}
+	d.Enabled = true
+	if err := Validate(d); err == nil {
+		t.Fatal("enabled empty workflow accepted")
+	}
+}
+
+func TestValidateAllowsCatalogResourceNames(t *testing.T) {
+	d := Definition{ID: "draft", Name: "Draft", Steps: []Step{{
+		ID:             "initialize",
+		Title:          "Initialize Go module",
+		AgentID:        "agent-builder",
+		Acceptance:     "The module files exist.",
+		Retry:          Retry{MaxAttempts: 1},
+		RequiredTools:  []string{"git.init", "fs.mkdir", "fs.write_file"},
+		RequiredSkills: []string{"skill-group-golang"},
+	}}}
+	if err := Validate(d); err != nil {
+		t.Fatalf("catalog resource names rejected: %v", err)
+	}
+}
+
 func TestValidateWorkflowRejectsUnsafeStepContracts(t *testing.T) {
 	valid := func() Definition {
 		return Definition{ID: "release", Name: "Release", Enabled: true, Steps: []Step{{
@@ -61,5 +87,22 @@ func TestServiceVersioningAndProfileIsolation(t *testing.T) {
 	}
 	if _, err = s.Get("profile-a", "../demo"); err == nil {
 		t.Fatal("path traversal workflow id accepted")
+	}
+}
+
+func TestDecodeStepAcceptsToolLists(t *testing.T) {
+	var step Step
+	if err := decodeStep(map[string]any{
+		"title":           "Use every available tool",
+		"required_tools":  []string{"fs.read_file", "go.go_search"},
+		"required_skills": []string{"golang"},
+	}, &step); err != nil {
+		t.Fatal(err)
+	}
+	if len(step.RequiredTools) != 2 || step.RequiredTools[1] != "go.go_search" {
+		t.Fatalf("required tools were not preserved: %#v", step.RequiredTools)
+	}
+	if len(step.RequiredSkills) != 1 || step.RequiredSkills[0] != "golang" {
+		t.Fatalf("required skills were not preserved: %#v", step.RequiredSkills)
 	}
 }

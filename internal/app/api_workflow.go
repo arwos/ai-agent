@@ -156,6 +156,11 @@ func (a *App) workflowSave(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
+	if q.Enabled {
+		if err = workflow.ValidateResources(p, q, a.tools, a.store); err != nil {
+			return err
+		}
+	}
 	v, err := a.workflows.Save(p, q)
 	if err != nil {
 		return err

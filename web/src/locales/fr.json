@@ -201,12 +201,14 @@
     "mode": {
       "normal": "Normal",
       "plan": "Plan",
+      "design": "Conception",
       "consult": "Consultation",
       "workflow": "Processus"
     },
     "modeDescription": {
       "normal": "Traiter la demande normalement",
       "plan": "Créer un plan avant d'agir",
+      "design": "Créer ou modifier des processus et compétences",
       "consult": "Répondre sans modifier les fichiers",
       "workflow": "Exécuter un processus configuré"
     }

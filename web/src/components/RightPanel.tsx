@@ -262,11 +262,11 @@ export function RightPanel({
         {/* memory */}
         <div>
           <SectionLabel>{t("panel.memory")}</SectionLabel>
-          <div className="glass rounded-xl p-3.5">
+          <div className="glass rounded-xl px-3.5 py-3">
             <button
               onClick={() => setMemoryOpen(true)}
               disabled={!memory?.summary}
-              className="w-full truncate text-left font-display text-[12px] font-medium text-indigo-200 transition-colors hover:text-cyan-200 disabled:cursor-default disabled:text-slate-600"
+              className="w-full truncate text-left font-display text-[12px] font-semibold text-indigo-200 transition-colors hover:text-cyan-200 disabled:cursor-default disabled:text-indigo-700"
               title={memory?.title}
             >
               {memory?.title || t("panel.memoryEmpty")}

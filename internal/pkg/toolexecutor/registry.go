@@ -133,6 +133,12 @@ func (r *Registry) Builtins() []BuiltinServer {
 }
 
 func (r *Registry) Execute(ctx context.Context, scope Scope, name string, args map[string]any) (string, error) {
+	if scope.Mode == "plan" {
+		return "", fmt.Errorf("tools are not available while building a plan")
+	}
+	if scope.Mode == "design" && !designTool(name) {
+		return "", fmt.Errorf("tool %q is not available in design mode", name)
+	}
 	if scope.Mode == "consult" && !consultTool(name) && !consultControlTool(name) {
 		return "", fmt.Errorf("tool %q is not available in consult mode", name)
 	}
@@ -207,6 +213,10 @@ func consultControlTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+func designTool(name string) bool {
+	return strings.HasPrefix(name, "workflow.") || strings.HasPrefix(name, "skills.") || name == "agent.list"
 }
 
 func (r *Registry) Prompt(extra []Tool) string {

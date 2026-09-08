@@ -7,6 +7,7 @@ package skills
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/arwos/ai-agent/internal/pkg/models"
@@ -74,8 +75,9 @@ func RegisterTools(tools *toolexecutor.Registry, service *Service) error {
 		},
 	}
 	createTool := toolexecutor.Tool{
-		Name:        "skills.create",
-		Description: "Create a profile skill. Set name to a unique human-readable skill name (letters, numbers, spaces, hyphens, or underscores; no paths), description to a short summary, and content to Markdown instructions. The profile and internal ID are assigned by the server.",
+		Name:             "skills.create",
+		Description:      "Create a profile skill. Set name to a unique human-readable skill name (letters, numbers, spaces, hyphens, or underscores; no paths), description to a short summary, and content to Markdown instructions. The profile and internal ID are assigned by the server.",
+		RequiresApproval: true,
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"name":        map[string]any{"type": "string", "description": "Unique human-readable name, not a path. Example: Go Code Review."},
 			"description": map[string]any{"type": "string"},
@@ -96,8 +98,9 @@ func RegisterTools(tools *toolexecutor.Registry, service *Service) error {
 		},
 	}
 	updateTool := toolexecutor.Tool{
-		Name:        "skills.update",
-		Description: "Update an existing profile skill selected by its name. Set description and/or content only when that field should change; at least one field is required. The internal ID is managed by the server.",
+		Name:             "skills.update",
+		Description:      "Update an existing profile skill selected by its name. Set description and/or content only when that field should change; at least one field is required. The internal ID is managed by the server.",
+		RequiresApproval: true,
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"name":        map[string]any{"type": "string", "description": "Existing unique skill name, not a path."},
 			"description": map[string]any{"type": "string", "description": "Optional replacement description."},
@@ -139,8 +142,9 @@ func RegisterTools(tools *toolexecutor.Registry, service *Service) error {
 		},
 	}
 	referenceTool := toolexecutor.Tool{
-		Name:        "skills.set_reference",
-		Description: "Save a code example or companion reference file inside an existing skill. The path is relative to the skill folder and must not be SKILL.md.",
+		Name:             "skills.set_reference",
+		Description:      "Save a code example or companion reference file inside an existing skill. The path is relative to the skill folder and must not be SKILL.md.",
+		RequiresApproval: true,
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"name":    map[string]any{"type": "string", "description": "Existing skill name."},
 			"path":    map[string]any{"type": "string", "description": "Relative reference path, for example examples/sample.go; SKILL.md is forbidden."},
@@ -162,7 +166,108 @@ func RegisterTools(tools *toolexecutor.Registry, service *Service) error {
 			return map[string]any{"name": name, "path": file, "saved": true}, nil
 		},
 	}
+	groupList := toolexecutor.Tool{Name: "skills.groups.list", Description: "List skill groups in the active profile.", Handler: func(_ context.Context, scope toolexecutor.Scope, _ map[string]any) (any, error) {
+		return service.Groups(scope.ProfileID)
+	}}
+	groupGet := toolexecutor.Tool{Name: "skills.groups.get", Description: "Get a skill group by ID.", Handler: func(_ context.Context, scope toolexecutor.Scope, args map[string]any) (any, error) {
+		id, _ := args["id"].(string)
+		groups, err := service.Groups(scope.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range groups {
+			if group.ID == id {
+				return group, nil
+			}
+		}
+		return nil, fmt.Errorf("skill group %q not found", id)
+	}}
+	groupCreate := groupWrite("create", service, func(_ []models.SkillGroup, args map[string]any) (models.SkillGroup, error) {
+		name, _ := args["name"].(string)
+		if name == "" {
+			return models.SkillGroup{}, fmt.Errorf("group name is required")
+		}
+		sum := sha256.Sum256([]byte(name))
+		return models.SkillGroup{ID: fmt.Sprintf("skill-group-%x", sum[:6]), ProfileID: "", Name: name}, nil
+	})
+	groupUpdate := groupWrite("update", service, func(groups []models.SkillGroup, args map[string]any) (models.SkillGroup, error) {
+		id, _ := args["id"].(string)
+		for _, group := range groups {
+			if group.ID == id {
+				if v, ok := args["name"].(string); ok {
+					group.Name = v
+				}
+				if v, ok := args["description"].(string); ok {
+					group.Description = v
+				}
+				if v, ok := args["apply_auto"].(bool); ok {
+					group.ApplyAuto = v
+				}
+				return group, nil
+			}
+		}
+		return models.SkillGroup{}, fmt.Errorf("skill group %q not found", id)
+	})
+	groupAssign := groupWrite("assign", service, func(groups []models.SkillGroup, args map[string]any) (models.SkillGroup, error) {
+		id, _ := args["id"].(string)
+		skillID, _ := args["skill_id"].(string)
+		for _, group := range groups {
+			if group.ID == id {
+				skills, err := service.List(scopeProfile(args))
+				found := false
+				for _, skill := range skills {
+					if skill.ID == skillID {
+						found = true
+						break
+					}
+				}
+				if err != nil || !found {
+					return models.SkillGroup{}, fmt.Errorf("skill %q not found", skillID)
+				}
+				group.SkillIDs = appendUnique(group.SkillIDs, skillID)
+				return group, nil
+			}
+		}
+		return models.SkillGroup{}, fmt.Errorf("skill group %q not found", id)
+	})
+	groupDelete := toolexecutor.Tool{Name: "skills.groups.delete", Description: "Delete an empty skill group in Design mode.", Handler: func(ctx context.Context, scope toolexecutor.Scope, args map[string]any) (any, error) {
+		if scope.Mode != "design" {
+			return nil, fmt.Errorf("skill group changes are available only in design mode")
+		}
+		id, _ := args["id"].(string)
+		groups, err := service.Groups(scope.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range groups {
+			if group.ID == id {
+				if len(group.SkillIDs) > 0 {
+					return nil, fmt.Errorf("skill group %q still contains skills", id)
+				}
+				approved, approvalErr := skillApproval(scope, ctx, "delete skill group", group, nil)
+				if approvalErr != nil || !approved {
+					return nil, fmt.Errorf("skill group deletion was not approved")
+				}
+				next := make([]models.SkillGroup, 0, len(groups)-1)
+				for _, candidate := range groups {
+					if candidate.ID != id {
+						next = append(next, candidate)
+					}
+				}
+				if err := service.SaveGroups(scope.ProfileID, next); err != nil {
+					return nil, err
+				}
+				return map[string]any{"deleted": true, "id": id}, nil
+			}
+		}
+		return nil, fmt.Errorf("skill group %q not found", id)
+	}}
 	for _, tool := range []toolexecutor.Tool{getTool, searchTool, createTool, updateTool, referenceTool} {
+		if err := tools.Register(tool); err != nil {
+			return err
+		}
+	}
+	for _, tool := range []toolexecutor.Tool{groupList, groupGet, groupCreate, groupUpdate, groupAssign, groupDelete} {
 		if err := tools.Register(tool); err != nil {
 			return err
 		}
@@ -184,6 +289,70 @@ func RegisterTools(tools *toolexecutor.Registry, service *Service) error {
 			ToolName: "skills.update", Alias: "update", Description: "Update an existing skill by name. Description and content are optional, but at least one must be supplied.", InputSchema: updateTool.InputSchema,
 		}, {
 			ToolName: "skills.set_reference", Alias: "set_reference", Description: "Save a code example or companion reference file inside a skill; the relative path must not be SKILL.md.", InputSchema: referenceTool.InputSchema,
-		}},
+		}, {ToolName: "skills.groups.list", Alias: "groups.list", Description: groupList.Description}, {ToolName: "skills.groups.get", Alias: "groups.get", Description: groupGet.Description}, {ToolName: "skills.groups.create", Alias: "groups.create", Description: groupCreate.Description}, {ToolName: "skills.groups.update", Alias: "groups.update", Description: groupUpdate.Description}, {ToolName: "skills.groups.assign", Alias: "groups.assign", Description: groupAssign.Description}, {ToolName: "skills.groups.delete", Alias: "groups.delete", Description: groupDelete.Description}},
 	})
 }
+
+func groupWrite(operation string, service *Service, build func([]models.SkillGroup, map[string]any) (models.SkillGroup, error)) toolexecutor.Tool {
+	return toolexecutor.Tool{Name: "skills.groups." + operation, Description: "Create or update a skill group in Design mode.", Handler: func(ctx context.Context, scope toolexecutor.Scope, args map[string]any) (any, error) {
+		if scope.Mode != "design" {
+			return nil, fmt.Errorf("skill group changes are available only in design mode")
+		}
+		groups, err := service.Groups(scope.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		args["_profile"] = scope.ProfileID
+		group, err := build(groups, args)
+		if err != nil {
+			return nil, err
+		}
+		group.ProfileID = scope.ProfileID
+		if operation == "create" {
+			for _, existing := range groups {
+				if existing.ID == group.ID || existing.Name == group.Name {
+					return nil, fmt.Errorf("skill group already exists")
+				}
+			}
+			groups = append(groups, group)
+		} else {
+			found := false
+			for i := range groups {
+				if groups[i].ID == group.ID {
+					groups[i] = group
+					found = true
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("skill group %q not found", group.ID)
+			}
+		}
+		if approved, approvalErr := skillApproval(scope, ctx, operation+" skill group", nil, group); approvalErr != nil || !approved {
+			return nil, fmt.Errorf("skill group change was not approved")
+		}
+		if err := service.SaveGroups(scope.ProfileID, groups); err != nil {
+			return nil, err
+		}
+		return map[string]any{"group": group, "operation": operation}, nil
+	}}
+}
+func skillApproval(scope toolexecutor.Scope, ctx context.Context, detail string, before, after any) (bool, error) {
+	if scope.Request == nil {
+		return false, fmt.Errorf("approval is unavailable")
+	}
+	value, err := scope.Request(ctx, map[string]any{"kind": "approval", "title": "Skill configuration change requires approval", "detail": detail, "before": before, "after": after})
+	if err != nil {
+		return false, err
+	}
+	accepted, ok := value.(bool)
+	return accepted && ok, nil
+}
+func appendUnique(values []string, value string) []string {
+	for _, item := range values {
+		if item == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+func scopeProfile(args map[string]any) string { value, _ := args["_profile"].(string); return value }

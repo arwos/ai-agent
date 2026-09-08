@@ -201,12 +201,14 @@
     "mode": {
       "normal": "Normal",
       "plan": "Plan",
+      "design": "Diseño",
       "consult": "Consulta",
       "workflow": "Flujo"
     },
     "modeDescription": {
       "normal": "Completar la solicitud normalmente",
       "plan": "Crear un plan antes de actuar",
+      "design": "Crear o editar flujos y habilidades",
       "consult": "Responder sin cambiar archivos",
       "workflow": "Ejecutar un flujo configurado"
     }

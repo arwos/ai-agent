@@ -145,23 +145,26 @@ func Validate(d Definition) error {
 	if !safePart(d.ID) || strings.TrimSpace(d.Name) == "" {
 		return fmt.Errorf("workflow id and name are required")
 	}
-	if len(d.Name) > maxText || len(d.Description) > maxText || len(d.Steps) == 0 || len(d.Steps) > maxSteps {
+	if len(d.Name) > maxText || len(d.Description) > maxText || len(d.Steps) > maxSteps || (d.Enabled && len(d.Steps) == 0) {
 		return fmt.Errorf("invalid workflow size")
 	}
 	seenSteps := map[string]bool{}
 	for _, step := range d.Steps {
-		if !safePart(step.ID) || seenSteps[step.ID] || strings.TrimSpace(step.Title) == "" {
-			return fmt.Errorf("workflow steps require unique ids and titles")
+		if !safePart(step.ID) || seenSteps[step.ID] {
+			return fmt.Errorf("workflow steps require unique ids")
+		}
+		if strings.TrimSpace(step.Title) == "" {
+			return fmt.Errorf("workflow step %q requires a title", step.ID)
 		}
 		seenSteps[step.ID] = true
 		if len(step.Title) > maxText || len(step.Description) > maxText || len(step.Acceptance) > maxText || strings.TrimSpace(step.Acceptance) == "" {
-			return fmt.Errorf("invalid workflow step %q", step.ID)
+			return fmt.Errorf("workflow step %q requires acceptance criteria", step.ID)
 		}
 		if !safePart(step.AgentID) {
-			return fmt.Errorf("invalid agent id for workflow step %q", step.ID)
+			return fmt.Errorf("workflow step %q requires a valid agent_id", step.ID)
 		}
 		if step.Retry.MaxAttempts < 1 || step.Retry.MaxAttempts > 10 {
-			return fmt.Errorf("invalid retry limit")
+			return fmt.Errorf("workflow step %q requires max_attempts from 1 to 10", step.ID)
 		}
 		if len(step.Substeps) > maxSubsteps {
 			return fmt.Errorf("workflow step %q exceeds collection limits", step.ID)
@@ -183,9 +186,14 @@ func Validate(d Definition) error {
 			}
 			seenSubsteps[substep.ID] = true
 		}
-		for _, capability := range append(append([]string{}, step.RequiredTools...), step.RequiredSkills...) {
-			if !safeCapability(capability) {
-				return fmt.Errorf("workflow step %q has invalid capability", step.ID)
+		for _, tool := range step.RequiredTools {
+			if !safeCapability(tool) {
+				return fmt.Errorf("workflow step %q has invalid required tool %q", step.ID, tool)
+			}
+		}
+		for _, group := range step.RequiredSkills {
+			if !safeCapability(group) {
+				return fmt.Errorf("workflow step %q has invalid skill group %q", step.ID, group)
 			}
 		}
 	}
@@ -208,7 +216,7 @@ func Validate(d Definition) error {
 }
 
 func safeCapability(v string) bool {
-	return v != "" && len(v) <= maxIdentifier && !strings.ContainsAny(v, `/\\\t\n\r `)
+	return v != "" && len(v) <= maxIdentifier && !strings.ContainsAny(v, "/\\\t\n\r ")
 }
 
 func (s *Service) List(profile string) ([]Definition, error) {

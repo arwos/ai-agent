@@ -3,7 +3,7 @@ package app
 import "testing"
 
 func TestValidateChatMode(t *testing.T) {
-	for _, mode := range []string{"normal", "plan", "consult", "workflow"} {
+	for _, mode := range []string{"normal", "plan", "design", "consult", "workflow"} {
 		id := ""
 		if mode == "workflow" {
 			id = "build"

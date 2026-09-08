@@ -220,7 +220,13 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 	if role == childRoleReviewer {
 		childMode = "consult"
 	}
-	go a.runChildChat(ctx, run, chatSendQuery{DialogID: childID, Content: task + "\n\nYou must report the canonical result with " + resultTool + " using this run token: " + plain, WorkspaceID: workspaceID, AgentID: agentID, Mode: childMode})
+	// The parent request finishes immediately after scheduling the child. Its
+	// deferred cancellation must not stop the child before it can run.
+	childCtx := context.Background()
+	if a.llmRootCtx != nil {
+		childCtx = a.llmRootCtx
+	}
+	go a.runChildChat(childCtx, run, chatSendQuery{DialogID: childID, Content: task + "\n\nYou must report the canonical result with " + resultTool + " using this run token: " + plain, WorkspaceID: workspaceID, AgentID: agentID, Mode: childMode})
 	return map[string]any{"dialog_id": childID, "task_id": taskID, "status": "waiting_agent"}, nil
 }
 

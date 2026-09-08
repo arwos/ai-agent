@@ -440,7 +440,7 @@ type InputProps = {
   onStop: () => void;
 };
 
-export type AgentMode = "normal" | "plan" | "consult" | "workflow";
+export type AgentMode = "normal" | "plan" | "design" | "consult" | "workflow";
 
 export function InputBar({
   agent,
@@ -509,7 +509,6 @@ export function InputBar({
     // Skill selection belongs to one message only. Do not carry it over to
     // the next prompt after the current message has been submitted.
     setSkillGroupIds([]);
-    setMode("normal");
     setWorkflowId("");
     const el = taRef.current;
     if (el) el.style.height = "auto";
@@ -670,7 +669,7 @@ export function InputBar({
                 <div className="fixed inset-0 z-20" onClick={() => setModesOpen(false)} />
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-full left-0 z-30 mb-2 w-56 rounded-xl border border-white/10 bg-abyss-850/98 p-2 shadow-2xl backdrop-blur-2xl">
                   <p className="px-3 pb-1.5 pt-1 font-mono text-[9px] tracking-[0.24em] text-slate-600">{t("input.modeTitle")}</p>
-                  {(["normal", "plan", "consult", "workflow"] as AgentMode[]).map((option) => <button key={option} type="button" onClick={() => { setMode(option); setModesOpen(option === "workflow"); if (option !== "workflow") setWorkflowId(""); }} className={`block w-full rounded-lg px-3 py-2 text-left ${mode === option ? "bg-cyan-400/[0.1] text-cyan-200" : "text-slate-300 hover:bg-white/[0.05]"}`}><div className="text-[11px]">{t(`input.mode.${option}`)}</div><div className="mt-0.5 text-[10px] leading-4 text-slate-500">{t(`input.modeDescription.${option}`)}</div></button>)}
+                  {(["normal", "plan", "design", "consult", "workflow"] as AgentMode[]).map((option) => <button key={option} type="button" onClick={() => { setMode(option); setModesOpen(option === "workflow"); if (option !== "workflow") setWorkflowId(""); }} className={`block w-full rounded-lg px-3 py-2 text-left ${mode === option ? "bg-cyan-400/[0.1] text-cyan-200" : "text-slate-300 hover:bg-white/[0.05]"}`}><div className="text-[11px]">{t(`input.mode.${option}`)}</div><div className="mt-0.5 text-[10px] leading-4 text-slate-500">{t(`input.modeDescription.${option}`)}</div></button>)}
                   {mode === "workflow" && <select value={workflowId} onChange={(event) => { setWorkflowId(event.target.value); setModesOpen(false); }} className="mt-1 w-full rounded-lg border border-white/10 bg-abyss-900 px-2 py-1.5 text-[10px] text-slate-300" aria-label={t("input.workflowSelect")}>
                     <option value="">{t("input.workflowSelect")}</option>{workflows.filter((workflow) => workflow.enabled).map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
                   </select>}
@@ -1115,7 +1114,8 @@ export function GoalPlate({
               {(goal.status === "paused" ||
                 goal.status === "stopped" ||
                 goal.status === "failed" ||
-                goal.status === "incomplete") &&
+                goal.status === "incomplete" ||
+                goal.status === "planned") &&
                 onResume && (
                   <button
                     title={t("goal.resume")}

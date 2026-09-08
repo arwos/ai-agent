@@ -842,7 +842,7 @@ function Shell() {
     text: string,
     files: string[],
     skillIds: string[],
-    mode: "normal" | "plan" | "consult" | "workflow" = "normal",
+    mode: "normal" | "plan" | "design" | "consult" | "workflow" = "normal",
     workflowId?: string,
   ) => {
     if (!activeWsId || busy) return;

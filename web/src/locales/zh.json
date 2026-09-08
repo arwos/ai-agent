@@ -201,12 +201,14 @@
     "mode": {
       "normal": "普通",
       "plan": "计划",
+      "design": "设计",
       "consult": "咨询",
       "workflow": "工作流"
     },
     "modeDescription": {
       "normal": "按通常方式完成请求",
       "plan": "先制定计划再执行",
+      "design": "创建或编辑工作流和技能",
       "consult": "不修改文件，仅提供回答",
       "workflow": "运行已配置的工作流"
     }

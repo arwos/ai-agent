@@ -83,7 +83,7 @@ export type GoalState = {
   dialogId: string;
   goal: string;
   workflowId?: string;
-  status: "running" | "awaiting_approval" | "paused" | "done" | "failed" | "stopped" | "incomplete";
+  status: "running" | "awaiting_approval" | "planned" | "paused" | "done" | "failed" | "stopped" | "incomplete";
   tasks: PlanTask[];
   approval?: { id: string; kind: "approval"; title: string; detail?: string; command?: string; createdAt?: string };
   createdAt?: string;

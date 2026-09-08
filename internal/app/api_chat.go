@@ -48,7 +48,7 @@ func validateChatMode(mode, workflowID string, asGoal bool) error {
 	if mode == "" {
 		mode = "normal"
 	}
-	if mode != "normal" && mode != "plan" && mode != "consult" && mode != "workflow" {
+	if mode != "normal" && mode != "plan" && mode != "design" && mode != "consult" && mode != "workflow" {
 		return fmt.Errorf("invalid chat mode %q", mode)
 	}
 	if mode == "workflow" && strings.TrimSpace(workflowID) == "" {
@@ -108,6 +108,16 @@ func defaultGoal(dialogID, request string) *goal.Goal {
 		Status:   "running",
 		Tasks:    []goal.GoalTask{{ID: dialog.NewMessageID(), Label: title, Status: "pending"}},
 	}
+}
+
+func formatGoalPlan(g *goal.Goal) string {
+	var b strings.Builder
+	b.WriteString("План сохранён. Выполнение не запускалось.\n\n")
+	for index, task := range g.Tasks {
+		b.WriteString(fmt.Sprintf("%d. %s\n", index+1, task.Label))
+	}
+	b.WriteString("\nЗапустите план отдельным действием, когда будете готовы.")
+	return b.String()
 }
 func applyGoalPlan(planGoal *goal.Goal, content string) error {
 	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
@@ -456,6 +466,15 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		mentionedSkills = nil
 	}
 	system += prompts.Mode(q.Mode)
+	if q.Mode == "design" {
+		catalog, catalogErr := workflow.Catalog(profileID, a.tools, a.store)
+		if catalogErr != nil {
+			return fmt.Errorf("load workflow resource catalog: %w", catalogErr)
+		}
+		if encoded, marshalErr := json.Marshal(catalog); marshalErr == nil {
+			system += "\n\n## Available workflow resources\nUse only these full tool names in workflow steps. Each agent entry lists tools it can execute.\n```json\n" + string(encoded) + "\n```"
+		}
+	}
 	if q.Mode == "workflow" {
 		if a.workflows == nil {
 			return fmt.Errorf("workflow service unavailable")
@@ -466,6 +485,9 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 		if !definition.Enabled {
 			return fmt.Errorf("workflow %q is disabled", q.WorkflowID)
+		}
+		if resourceErr := workflow.ValidateResources(profileID, definition, a.tools, a.store); resourceErr != nil {
+			return fmt.Errorf("validate workflow resources: %w", resourceErr)
 		}
 	}
 	if builtins, builtinErr := a.builtinMCP(profileID); builtinErr == nil {
@@ -482,7 +504,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			// User interaction is a platform capability, not an optional model
 			// tool: without it the model can only print choices as prose and the
 			// UI cannot render a dialog. Always expose it to the agent.
-			if !selected[server.ID] && server.BuiltinKey != "user" {
+			if !selected[server.ID] && server.BuiltinKey != "user" && !(q.Mode == "design" && (server.BuiltinKey == "workflow" || server.BuiltinKey == "skills")) {
 				continue
 			}
 			tools, aliases := builtinPromptTools(server)
@@ -506,6 +528,29 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		extraTools = filtered
 		for alias, target := range builtinAliases {
 			if !allowed[alias] && !allowed[target] {
+				delete(builtinAliases, alias)
+				delete(builtinAllowed, target)
+			}
+		}
+	}
+	if q.Mode == "design" {
+		allowed := func(name string) bool {
+			return strings.HasPrefix(name, "workflow.") || strings.HasPrefix(name, "skills.") || name == "agent.list"
+		}
+		filtered := extraTools[:0]
+		for _, tool := range extraTools {
+			if allowed(tool.Name) {
+				filtered = append(filtered, tool)
+			}
+		}
+		extraTools = filtered
+		for name := range mcpBindings {
+			if !allowed(name) {
+				delete(mcpBindings, name)
+			}
+		}
+		for alias, target := range builtinAliases {
+			if !allowed(alias) && !allowed(target) {
 				delete(builtinAliases, alias)
 				delete(builtinAllowed, target)
 			}
@@ -710,6 +755,21 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			return nil
 		}
 		activeGoal.Status = "running"
+		if q.Mode == "plan" {
+			activeGoal.Status = "planned"
+			activeGoal.Approval = nil
+			if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
+				return saveErr
+			}
+			publishGoal(activeGoal)
+			plan := formatGoalPlan(activeGoal)
+			_ = a.dialogs.Append(q.DialogID, dialog.Message{ID: dialog.NewMessageID(), Role: "assistant", Content: plan, Model: model, Provider: profileProvider.Name})
+			if a.publish != nil {
+				a.publish(StreamMessage{Type: "status", Payload: map[string]string{"dialog_id": publicDialogID, "agent_id": q.AgentID, "status": "idle"}})
+				a.publish(StreamMessage{Type: "done", Payload: map[string]any{"dialog_id": publicDialogID, "content": plan, "tokens": planningUsage.TotalTokens, "contextTokens": planningUsage.LastPromptTokens + planningUsage.LastCompletionTokens, "latency": time.Since(startedAt).Milliseconds(), "rpm": llm.RequestsPerMinute(activeRateLimitKey), "rpmLimit": activeRPM}})
+			}
+			return nil
+		}
 		activeGoal.Approval = nil
 		if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
 			return saveErr
@@ -718,6 +778,13 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	if q.Mode == "workflow" && activeGoal != nil {
 		if q.AgentID == "" {
 			return fmt.Errorf("reviewer agent is required for workflow mode")
+		}
+		// Workflow mode starts the scheduler directly and does not pass through
+		// AgentEngine.Run, which normally persists the user turn.
+		if !q.Resume {
+			if appendErr := a.dialogs.Append(q.DialogID, dialog.Message{Role: "user", Content: q.Content, Model: model, Provider: profileProvider.Name}); appendErr != nil {
+				return fmt.Errorf("save workflow request: %w", appendErr)
+			}
 		}
 		return a.scheduleWorkflow(ctx, profileID, publicDialogID, q.WorkspaceID, activeGoal)
 	}

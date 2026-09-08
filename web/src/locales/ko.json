@@ -201,12 +201,14 @@
     "mode": {
       "normal": "일반",
       "plan": "계획",
+      "design": "설계",
       "consult": "상담",
       "workflow": "워크플로"
     },
     "modeDescription": {
       "normal": "요청을 일반적으로 처리합니다",
       "plan": "실행 전에 계획을 만듭니다",
+      "design": "워크플로와 스킬을 만들거나 수정합니다",
       "consult": "파일을 변경하지 않고 답합니다",
       "workflow": "설정된 워크플로를 실행합니다"
     }

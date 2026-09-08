@@ -29,7 +29,7 @@ dialogs:
     history_limit: 100
 
 agent:
-    max_iterations: 8
+    max_iterations: 100
 
 local_llm:
     folder: ./datasource/llm

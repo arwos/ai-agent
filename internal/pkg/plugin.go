@@ -40,6 +40,7 @@ var Plugins = plugin.Inject(
 	skills.RegisterTools,
 	dialog.WithPlugin(),
 	workflow.WithPlugin(),
+	workflow.NewToolRegistration,
 	dialog.NewRegistry,
 	mcp.New,
 	proxy.New,
