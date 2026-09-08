@@ -100,6 +100,7 @@ export type Conversation = {
   title: string;
   updatedAt: string;
   activeModel?: string;
+  parentId?: string;
   messages: ChatMessage[];
   hasOlder?: boolean;
   hasNewer?: boolean;

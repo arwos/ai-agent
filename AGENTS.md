@@ -90,6 +90,8 @@ datasource/llm/
 
 With `asGoal: true`, generate and persist a concise plan before execution without inserting planning prose into history. Advance tasks only from actual AgentEngine tool callbacks. Successful but unneeded planned tasks are `skipped`, never `done`. Without `asGoal`, create a goal only after the first real tool callback. `goal.json` is current state and `goals.jsonl` is append-only history; `conversation.get` returns session memory and both goal forms.
 
+Delegated child callbacks use explicit JSON schemas and flat arguments. `agent.result` accepts `{run_token, status, result, error?, artifacts?, changed_files?}`, while `workflow.review_result` accepts `{run_token, verdict, summary, evidence?, feedback?}`. The run token must be copied exactly from the child prompt; do not nest callback arguments under `result` or `review`. `status` is `success` or `failed`; `verdict` is `pass` or `fail`, and a failed review requires `feedback`.
+
 Skills and knowledge imports deliberately accept user-selected paths outside a workspace. KB folder import supports Markdown, text, YAML, JSON, Go, HTML and JS/TS-family sources. Knowledge and durable memory use persistent Bleve indexes. `memory.search` and `knowledge.search` are explicit tools: never inject their records automatically into every prompt.
 
 ## SQLite, configuration and delivery

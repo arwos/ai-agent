@@ -48,6 +48,51 @@ type workflowReviewResult struct {
 	Feedback string   `json:"feedback,omitempty"`
 }
 
+func workflowTaskLabel(g *goal.Goal, taskID string) string {
+	if g != nil {
+		for _, task := range g.Tasks {
+			if task.ID == taskID && strings.TrimSpace(task.Label) != "" {
+				return task.Label
+			}
+		}
+	}
+	return "workflow step"
+}
+
+func (a *App) appendChildProgress(run childRun, parentGoal *goal.Goal, status, result, errorText string) error {
+	label := workflowTaskLabel(parentGoal, run.TaskID)
+	var content string
+	if status == "waiting_agent" || status == "reviewing" {
+		if run.Role == childRoleReviewer {
+			content = "Запускаю проверку шага: " + label
+		} else {
+			content = "Запускаю шаг: " + label
+		}
+	} else {
+		prefix := "Шаг"
+		if run.Role == childRoleReviewer {
+			prefix = "Проверка шага"
+		}
+		if status == "success" {
+			content = prefix + " выполнен: " + label
+			if value := strings.TrimSpace(truncateGoalResult(result)); value != "" {
+				content += "\n\n" + value
+			}
+		} else {
+			content = prefix + " не выполнен: " + label
+			if value := strings.TrimSpace(truncateGoalResult(errorText)); value != "" {
+				content += "\n\n" + value
+			}
+		}
+	}
+	return a.dialogs.Append(a.dialogKey(run.ProfileID, run.ParentDialogID), dialog.Message{
+		ID:          dialog.NewMessageID(),
+		Role:        "assistant",
+		Content:     content,
+		VisibleOnly: true,
+	})
+}
+
 func token() (string, string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil {
@@ -146,7 +191,7 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 	if !containsAgent(agents, agentID) {
 		return nil, fmt.Errorf("child agent %q not found", agentID)
 	}
-	parentGoal, err := a.dialogs.Goal(dialog.SessionKey(profileID, parentID))
+	parentGoal, err := a.dialogs.Goal(a.dialogKey(profileID, parentID))
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +228,7 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 	if err != nil {
 		return nil, err
 	}
-	if _, err = a.store.ConversationUpsert(models.Conversation{ID: childID, ProfileID: profileID, WorkspaceID: workspaceID, AgentID: agentID, ParentID: parentID, Title: goalTitle(task)}); err != nil {
+	if _, err = a.dialogs.SaveConversation(models.Conversation{ID: childID, ProfileID: profileID, WorkspaceID: workspaceID, AgentID: agentID, ParentID: parentID, Title: goalTitle(task)}); err != nil {
 		return nil, err
 	}
 	for i := range parentGoal.Tasks {
@@ -204,14 +249,24 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 			parentGoal.Tasks[i].StartedAt = time.Now().UTC()
 		}
 	}
-	if err = a.dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), *parentGoal); err != nil {
+	if err = a.dialogs.SaveGoal(a.dialogKey(profileID, parentID), *parentGoal); err != nil {
 		return nil, err
 	}
 	a.childMu.Lock()
 	run := childRun{ProfileID: profileID, ParentDialogID: parentID, ChildDialogID: childID, TaskID: taskID, TokenHash: hash, Role: role}
 	a.childRuns[childID] = run
 	a.childMu.Unlock()
-	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": parentID, "child_dialog_id": childID, "task_id": taskID, "status": "waiting_agent"}})
+	childStatus := "waiting_agent"
+	if role == childRoleReviewer {
+		childStatus = "reviewing"
+	}
+	if err = a.appendChildProgress(run, parentGoal, childStatus, "", ""); err != nil {
+		a.childMu.Lock()
+		delete(a.childRuns, childID)
+		a.childMu.Unlock()
+		return nil, err
+	}
+	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": parentID, "child_dialog_id": childID, "task_id": taskID, "status": childStatus}})
 	resultTool := "agent.result"
 	if role == childRoleReviewer {
 		resultTool = "workflow.review_result"
@@ -223,10 +278,12 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 	// The parent request finishes immediately after scheduling the child. Its
 	// deferred cancellation must not stop the child before it can run.
 	childCtx := context.Background()
+	a.llmMu.Lock()
 	if a.llmRootCtx != nil {
 		childCtx = a.llmRootCtx
 	}
-	go a.runChildChat(childCtx, run, chatSendQuery{DialogID: childID, Content: task + "\n\nYou must report the canonical result with " + resultTool + " using this run token: " + plain, WorkspaceID: workspaceID, AgentID: agentID, Mode: childMode})
+	a.llmMu.Unlock()
+	go a.runChildChat(childCtx, run, chatSendQuery{DialogID: childID, Content: task + "\n\nYou must report the canonical result with " + resultTool + " using this run token: " + plain, WorkspaceID: workspaceID, AgentID: agentID, Mode: childMode, Internal: true})
 	return map[string]any{"dialog_id": childID, "task_id": taskID, "status": "waiting_agent"}, nil
 }
 
@@ -285,7 +342,7 @@ func (a *App) completeChildRun(run childRun, raw map[string]any) (any, error) {
 			return nil, fmt.Errorf("invalid changed file metadata")
 		}
 	}
-	parentGoal, err := a.dialogs.Goal(dialog.SessionKey(run.ProfileID, run.ParentDialogID))
+	parentGoal, err := a.dialogs.Goal(a.dialogKey(run.ProfileID, run.ParentDialogID))
 	if err != nil || parentGoal == nil {
 		return nil, fmt.Errorf("parent goal not found")
 	}
@@ -329,7 +386,7 @@ func (a *App) completeWorkflowReview(run childRun, raw map[string]any) (any, err
 	if hex.EncodeToString(sum[:]) != run.TokenHash {
 		return nil, fmt.Errorf("invalid run token")
 	}
-	parentGoal, err := a.dialogs.Goal(dialog.SessionKey(run.ProfileID, run.ParentDialogID))
+	parentGoal, err := a.dialogs.Goal(a.dialogKey(run.ProfileID, run.ParentDialogID))
 	if err != nil || parentGoal == nil {
 		return nil, fmt.Errorf("parent goal not found")
 	}
@@ -357,15 +414,23 @@ func (a *App) completeWorkflowReview(run childRun, raw map[string]any) (any, err
 		parentGoal.CurrentTaskID = ""
 		parentGoal.Status = "failed"
 	}
-	if err = a.dialogs.SaveGoal(dialog.SessionKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+	if err = a.dialogs.SaveGoal(a.dialogKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+		return nil, err
+	}
+	status := "failed"
+	if result.Verdict == "pass" {
+		status = "success"
+	}
+	if err = a.appendChildProgress(run, parentGoal, status, result.Summary, result.Feedback); err != nil {
 		return nil, err
 	}
 	a.childMu.Lock()
 	delete(a.childRuns, run.ChildDialogID)
 	a.childMu.Unlock()
+	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": run.ParentDialogID, "child_dialog_id": run.ChildDialogID, "task_id": run.TaskID, "status": status}})
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": run.ParentDialogID, "goal": parentGoal}})
 	if parentGoal.Status == "running" {
-		conversation, conversationErr := a.store.Conversation(run.ProfileID, run.ParentDialogID)
+		conversation, conversationErr := a.dialogs.Conversation(run.ProfileID, run.ParentDialogID)
 		if conversationErr == nil {
 			go func() {
 				_ = a.scheduleWorkflow(context.Background(), run.ProfileID, run.ParentDialogID, conversation.WorkspaceID, parentGoal)
@@ -376,7 +441,7 @@ func (a *App) completeWorkflowReview(run childRun, raw map[string]any) (any, err
 }
 
 func (a *App) completeChildRunInternal(run childRun, status, value, errorText string) error {
-	parentGoal, err := a.dialogs.Goal(dialog.SessionKey(run.ProfileID, run.ParentDialogID))
+	parentGoal, err := a.dialogs.Goal(a.dialogKey(run.ProfileID, run.ParentDialogID))
 	if err != nil || parentGoal == nil {
 		return err
 	}
@@ -384,7 +449,7 @@ func (a *App) completeChildRunInternal(run childRun, status, value, errorText st
 		task := &parentGoal.Tasks[i]
 		if run.Role == childRoleReviewer && task.ID == run.TaskID && task.ReviewerDialogID == run.ChildDialogID && task.RunTokenHash == run.TokenHash && task.Status == "reviewing" {
 			task.Status, task.Error, parentGoal.Status = "failed", errorText, "failed"
-			return a.saveWorkflowChildFailure(run, parentGoal)
+			return a.saveWorkflowChildFailure(run, parentGoal, errorText)
 		}
 		if task.ID == run.TaskID && task.ChildDialogID == run.ChildDialogID && task.RunTokenHash == run.TokenHash && task.Status == "waiting_agent" {
 			return a.finishChildRun(run, parentGoal, status, value, errorText, nil, nil)
@@ -393,13 +458,17 @@ func (a *App) completeChildRunInternal(run childRun, status, value, errorText st
 	return nil
 }
 
-func (a *App) saveWorkflowChildFailure(run childRun, parentGoal *goal.Goal) error {
-	if err := a.dialogs.SaveGoal(dialog.SessionKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+func (a *App) saveWorkflowChildFailure(run childRun, parentGoal *goal.Goal, errorText string) error {
+	if err := a.dialogs.SaveGoal(a.dialogKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+		return err
+	}
+	if err := a.appendChildProgress(run, parentGoal, "failed", "", errorText); err != nil {
 		return err
 	}
 	a.childMu.Lock()
 	delete(a.childRuns, run.ChildDialogID)
 	a.childMu.Unlock()
+	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": run.ParentDialogID, "child_dialog_id": run.ChildDialogID, "task_id": run.TaskID, "status": "failed"}})
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": run.ParentDialogID, "goal": parentGoal}})
 	return nil
 }
@@ -443,7 +512,10 @@ func (a *App) finishChildRun(run childRun, parentGoal *goal.Goal, status, value,
 		}
 		break
 	}
-	if err := a.dialogs.SaveGoal(dialog.SessionKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+	if err := a.dialogs.SaveGoal(a.dialogKey(run.ProfileID, run.ParentDialogID), *parentGoal); err != nil {
+		return err
+	}
+	if err := a.appendChildProgress(run, parentGoal, status, value, errorText); err != nil {
 		return err
 	}
 	a.childMu.Lock()
@@ -452,7 +524,7 @@ func (a *App) finishChildRun(run childRun, parentGoal *goal.Goal, status, value,
 	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": run.ParentDialogID, "child_dialog_id": run.ChildDialogID, "task_id": run.TaskID, "status": status}})
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": run.ParentDialogID, "goal": parentGoal}})
 	if reviewTask != nil {
-		conversation, err := a.store.Conversation(run.ProfileID, run.ParentDialogID)
+		conversation, err := a.dialogs.Conversation(run.ProfileID, run.ParentDialogID)
 		if err == nil {
 			go func() {
 				_ = a.startWorkflowReview(context.Background(), run.ProfileID, run.ParentDialogID, conversation.WorkspaceID, parentGoal, reviewTask)
@@ -461,7 +533,7 @@ func (a *App) finishChildRun(run childRun, parentGoal *goal.Goal, status, value,
 		return nil
 	}
 	if schedule && parentGoal.Status == "running" {
-		conversation, err := a.store.Conversation(run.ProfileID, run.ParentDialogID)
+		conversation, err := a.dialogs.Conversation(run.ProfileID, run.ParentDialogID)
 		if err == nil {
 			go func() {
 				_ = a.scheduleWorkflow(context.Background(), run.ProfileID, run.ParentDialogID, conversation.WorkspaceID, parentGoal)
@@ -481,7 +553,7 @@ func (a *App) resumeParentAfterChild(run childRun, parentGoal *goal.Goal) {
 	if a.store == nil {
 		return
 	}
-	conversation, err := a.store.Conversation(run.ProfileID, run.ParentDialogID)
+	conversation, err := a.dialogs.Conversation(run.ProfileID, run.ParentDialogID)
 	if err != nil {
 		return
 	}
@@ -508,7 +580,7 @@ func (a *App) resumeParentAfterChild(run childRun, parentGoal *goal.Goal) {
 			cancel()
 			close(job.done)
 		}()
-		_ = a.runChatSend(chatSendQuery{DialogID: run.ParentDialogID, WorkspaceID: conversation.WorkspaceID, AgentID: conversation.AgentID, Model: conversation.ActiveModel, Resume: true, Mode: mode, WorkflowID: parentGoal.WorkflowID}, ctx, "", nil)
+		_ = a.runChatSend(chatSendQuery{DialogID: run.ParentDialogID, WorkspaceID: conversation.WorkspaceID, AgentID: conversation.AgentID, Model: conversation.ActiveModel, Resume: true, Mode: mode, WorkflowID: parentGoal.WorkflowID, Internal: true}, ctx, "", nil)
 	}()
 }
 
@@ -518,7 +590,7 @@ func (a *App) restoreChildRuns() {
 		return
 	}
 	for _, profile := range profiles {
-		conversations, listErr := a.store.ProfileConversations(profile.ID)
+		conversations, listErr := a.dialogs.ProfileConversations(profile.ID)
 		if listErr != nil {
 			continue
 		}
@@ -526,7 +598,7 @@ func (a *App) restoreChildRuns() {
 			if conversation.ParentID == "" {
 				continue
 			}
-			parentGoal, goalErr := a.dialogs.Goal(dialog.SessionKey(profile.ID, conversation.ParentID))
+			parentGoal, goalErr := a.dialogs.Goal(a.dialogKey(profile.ID, conversation.ParentID))
 			if goalErr != nil || parentGoal == nil {
 				continue
 			}
@@ -567,17 +639,21 @@ func (a *App) cancelChildJobs(profileID, parentID string) {
 		a.childMu.Lock()
 		delete(a.childRuns, run.ChildDialogID)
 		a.childMu.Unlock()
+		parentGoal, goalErr := a.dialogs.Goal(a.dialogKey(profileID, parentID))
+		if goalErr != nil || parentGoal == nil || a.appendChildProgress(run, parentGoal, "stopped", "", "workflow stopped") != nil {
+			continue
+		}
 		a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": run.ParentDialogID, "child_dialog_id": run.ChildDialogID, "task_id": run.TaskID, "status": "stopped"}})
 	}
 	if len(runs) == 0 || a.dialogs == nil {
 		return
 	}
-	parentGoal, err := a.dialogs.Goal(dialog.SessionKey(profileID, parentID))
+	parentGoal, err := a.dialogs.Goal(a.dialogKey(profileID, parentID))
 	if err != nil || parentGoal == nil {
 		return
 	}
 	if goal.CancelWorkflowTasks(parentGoal) {
-		if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), *parentGoal); err == nil {
+		if err := a.dialogs.SaveGoal(a.dialogKey(profileID, parentID), *parentGoal); err == nil {
 			a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": parentID, "goal": parentGoal}})
 		}
 	}

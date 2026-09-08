@@ -94,8 +94,12 @@ func TestInitCreatesGitDirectoryBelowRoot(t *testing.T) {
 	if _, err := root.Stat(".git"); err != nil {
 		t.Fatalf(".git is not inside root: %v", err)
 	}
-	if _, err := Init(root); err == nil {
-		t.Fatal("second initialization should fail")
+	reopened, err := Init(root)
+	if err != nil {
+		t.Fatalf("second initialization should be idempotent: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

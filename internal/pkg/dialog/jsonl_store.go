@@ -39,7 +39,10 @@ type Message struct {
 	ToolsUsed   []string       `json:"tools_used,omitempty"`
 	Tool        string         `json:"tool,omitempty"`
 	Arguments   map[string]any `json:"arguments,omitempty"`
-	DecodeError bool           `json:"-"`
+	// VisibleOnly records user-facing operational progress without presenting it
+	// as a model response in subsequent agent or compaction requests.
+	VisibleOnly bool `json:"visibleOnly,omitempty"`
+	DecodeError bool `json:"-"`
 }
 type Store struct {
 	Root         string
@@ -49,12 +52,28 @@ type Store struct {
 
 const sessionSeparator = "\x00"
 
-// SessionKey identifies a dialog independently of its workspace and maps it to
-// datasource/dialogs/{profileID}/{sessionID}/history.jsonl.
+// SessionKey identifies a top-level dialog independently of its workspace.
 func SessionKey(profileID, sessionID string) string { return profileID + sessionSeparator + sessionID }
 
+// SubconversationKey maps a child dialog under its parent conversation.
+func SubconversationKey(profileID, parentID, sessionID string) string {
+	return profileID + sessionSeparator + parentID + sessionSeparator + sessionID
+}
+
 func (s *Store) historyPath(id string) string {
-	parts := strings.SplitN(id, sessionSeparator, 2)
+	parts := strings.Split(id, sessionSeparator)
+	if len(parts) == 3 && safePart(parts[0]) && safePart(parts[1]) && safePart(parts[2]) {
+		path := filepath.Join(s.Root, parts[0], parts[1], "subconversation", parts[2], "history.jsonl")
+		if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
+			return path
+		}
+		// Conversations created before child nesting used a flat directory.
+		legacy := filepath.Join(s.Root, parts[0], parts[2], "history.jsonl")
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+		return path
+	}
 	if len(parts) == 2 && safePart(parts[0]) && safePart(parts[1]) {
 		return filepath.Join(s.Root, parts[0], parts[1], "history.jsonl")
 	}
@@ -81,6 +100,14 @@ type historyMeta struct {
 
 func (s *Store) historyIndexPath(id string) string { return s.historyPath(id) + ".index" }
 func (s *Store) historyMetaPath(id string) string  { return s.historyPath(id) + ".meta.json" }
+
+// Exists reports whether a dialog has persisted history.
+func (s *Store) Exists(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := os.Stat(s.historyPath(id))
+	return err == nil
+}
 
 func safePart(value string) bool {
 	return value != "" && value != "." && value != ".." && filepath.Base(value) == value && !strings.ContainsAny(value, `/\\`)
@@ -682,7 +709,23 @@ func (s *Store) Goals(id string) ([]goal.Goal, error)     { return s.goalStore()
 func (s *Store) Goal(id string) (*goal.Goal, error)       { return s.goalStore().Goal(id) }
 func (s *Store) SaveGoal(id string, item goal.Goal) error { return s.goalStore().SaveGoal(id, item) }
 func (s *Store) DeleteGoal(id string) error               { return s.goalStore().DeleteGoal(id) }
-func (s *Store) DeleteGoals(id string) error              { return s.goalStore().DeleteGoals(id) }
+func (s *Store) DeleteGoals(id string) error {
+	if err := s.goalStore().DeleteGoals(id); err != nil {
+		return err
+	}
+	// A child dialog lives below the parent's subconversation directory. Once
+	// its files are gone, remove both empty directories so deletion does not
+	// leave an orphaned dialog folder behind.
+	parts := strings.Split(id, sessionSeparator)
+	if len(parts) == 3 && safePart(parts[0]) && safePart(parts[1]) && safePart(parts[2]) {
+		childDir := filepath.Join(s.Root, parts[0], parts[1], "subconversation", parts[2])
+		_ = os.Remove(childDir)
+		_ = os.Remove(filepath.Dir(childDir))
+	} else if len(parts) == 2 && safePart(parts[0]) && safePart(parts[1]) {
+		_ = os.Remove(filepath.Join(s.Root, parts[0], parts[1]))
+	}
+	return nil
+}
 
 // CleanupOrphans removes legacy histories and profile/session directories that
 // are no longer represented by the configuration store. It only operates

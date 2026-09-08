@@ -58,10 +58,5 @@ func (s *Store) WorkspaceConversations(workspaceID string) ([]models.Conversatio
 }
 
 func (s *Store) WorkspaceDelete(profileID, id string) error {
-	return s.db.Tx(context.Background(), "configstore.workspace.delete", func(tx orm.Tx) {
-		tx.Exec(func(q orm.Executor) {
-			q.SQL(`DELETE FROM conversations WHERE profile_id=? AND workspace_id=?`, profileID, id)
-		})
-		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM workspaces WHERE profile_id=? AND id=?`, profileID, id) })
-	})
+	return s.db.Exec(context.Background(), "configstore.workspace.delete", func(q orm.Executor) { q.SQL(`DELETE FROM workspaces WHERE profile_id=? AND id=?`, profileID, id) })
 }

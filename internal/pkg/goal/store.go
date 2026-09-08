@@ -96,7 +96,10 @@ type TaskAttempt struct {
 func NewStore(root string) *Store { return &Store{Root: root} }
 
 func (s *Store) goalPath(id string) string {
-	parts := strings.SplitN(id, sessionSeparator, 2)
+	parts := strings.Split(id, sessionSeparator)
+	if len(parts) == 3 && safePart(parts[0]) && safePart(parts[1]) && safePart(parts[2]) {
+		return filepath.Join(s.Root, parts[0], parts[1], "subconversation", parts[2], "goal.json")
+	}
 	if len(parts) == 2 && safePart(parts[0]) && safePart(parts[1]) {
 		return filepath.Join(s.Root, parts[0], parts[1], "goal.json")
 	}

@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"github.com/arwos/ai-agent/internal/pkg/dialog"
 	"github.com/arwos/ai-agent/internal/pkg/goal"
 	"github.com/arwos/ai-agent/internal/pkg/workflow"
 	"go.osspkg.com/goppy/v3/plugins/ws"
@@ -23,7 +22,7 @@ func (a *App) workflowGoal(ev event.Event) (string, *goal.Goal, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	g, err := a.dialogs.Goal(dialog.SessionKey(profileID, q.DialogID))
+	g, err := a.dialogs.Goal(a.dialogKey(profileID, q.DialogID))
 	if err != nil {
 		return "", nil, err
 	}
@@ -48,7 +47,7 @@ func (a *App) workflowPause(ev event.Event, _ ws.Meta) error {
 		}
 	}
 	a.cancelWorkflowChildren(profileID, g.DialogID)
-	if err = a.dialogs.SaveGoal(dialog.SessionKey(profileID, g.DialogID), *g); err != nil {
+	if err = a.dialogs.SaveGoal(a.dialogKey(profileID, g.DialogID), *g); err != nil {
 		return err
 	}
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": g.DialogID, "goal": g}})
@@ -63,12 +62,12 @@ func (a *App) workflowContinue(ev event.Event, meta ws.Meta) error {
 	if g.Status != "paused" {
 		return ev.Encode(map[string]any{"status": g.Status})
 	}
-	conversation, err := a.store.Conversation(profileID, g.DialogID)
+	conversation, err := a.dialogs.Conversation(profileID, g.DialogID)
 	if err != nil {
 		return err
 	}
 	g.Status = "running"
-	if err = a.dialogs.SaveGoal(dialog.SessionKey(profileID, g.DialogID), *g); err != nil {
+	if err = a.dialogs.SaveGoal(a.dialogKey(profileID, g.DialogID), *g); err != nil {
 		return err
 	}
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": g.DialogID, "goal": g}})
@@ -86,7 +85,7 @@ func (a *App) workflowStop(ev event.Event, _ ws.Meta) error {
 	a.cancelChildJobs(profileID, g.DialogID)
 	g.Status = "stopped"
 	goal.CancelWorkflowTasks(g)
-	if err = a.dialogs.SaveGoal(dialog.SessionKey(profileID, g.DialogID), *g); err != nil {
+	if err = a.dialogs.SaveGoal(a.dialogKey(profileID, g.DialogID), *g); err != nil {
 		return err
 	}
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": g.DialogID, "goal": g}})

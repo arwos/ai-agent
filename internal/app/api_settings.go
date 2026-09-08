@@ -409,7 +409,7 @@ func (a *App) settingsCleanup(ev event.Event, _ ws.Meta) error {
 	validDialogs := make(map[string]map[string]struct{}, len(profiles))
 	for _, profile := range profiles {
 		validProfiles[profile.ID] = struct{}{}
-		conversations, listErr := a.store.ProfileConversations(profile.ID)
+		conversations, listErr := a.dialogs.ProfileConversations(profile.ID)
 		if listErr != nil {
 			return listErr
 		}

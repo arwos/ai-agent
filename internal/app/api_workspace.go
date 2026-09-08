@@ -20,7 +20,6 @@ import (
 	"go.osspkg.com/goppy/v3/plugins/ws"
 	"go.osspkg.com/goppy/v3/plugins/ws/event"
 
-	"github.com/arwos/ai-agent/internal/pkg/dialog"
 	"github.com/arwos/ai-agent/internal/pkg/models"
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
@@ -370,17 +369,17 @@ func (a *App) workspaceClose(ev event.Event, _ ws.Meta) error {
 		return fmt.Errorf("workspace id is required")
 	}
 	if a.store != nil {
-		if conversations, err := a.store.WorkspaceConversations(q.ID); err != nil {
+		profile, profileErr := a.activeProfile()
+		if profileErr != nil {
+			return profileErr
+		}
+		if conversations, err := a.dialogs.Conversations(profile, q.ID); err != nil {
 			return err
 		} else {
 			for _, conversation := range conversations {
-				_ = a.dialogs.Delete(dialog.SessionKey(conversation.ProfileID, conversation.ID))
+				_ = a.dialogs.Delete(conversationDialogKey(conversation.ProfileID, conversation))
 				_ = a.memory.Delete(conversation.ProfileID, q.ID, conversation.ID)
 			}
-		}
-		profile, err := a.activeProfile()
-		if err != nil {
-			return err
 		}
 		if err := a.store.WorkspaceDelete(profile, q.ID); err != nil {
 			return err

@@ -92,7 +92,6 @@ func (s *Store) ProfileDelete(id string) error {
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM profile_builtin_mcp_settings WHERE profile_id=?`, id) })
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM proxies WHERE profile_id=?`, id) })
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM workspaces WHERE profile_id=?`, id) })
-		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM conversations WHERE profile_id=?`, id) })
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM agents WHERE profile_id=?`, id) })
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM presets WHERE profile_id=?`, id) })
 		tx.Exec(func(q orm.Executor) { q.SQL(`DELETE FROM profile_providers WHERE profile_id=?`, id) })
@@ -116,7 +115,6 @@ func (s *Store) CleanupOrphanProfileData() error {
 			"profile_builtin_mcp_settings",
 			"proxies",
 			"workspaces",
-			"conversations",
 			"agents",
 			"presets",
 			"profile_providers",

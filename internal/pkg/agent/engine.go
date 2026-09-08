@@ -68,7 +68,7 @@ func (e *Engine) Run(ctx context.Context, id, prompt string) (result string, usa
 			}
 		}
 		for _, message := range history[start:] {
-			if message.Error {
+			if message.Error || message.VisibleOnly {
 				continue
 			}
 			role := message.Role

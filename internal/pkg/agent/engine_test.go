@@ -394,6 +394,30 @@ func TestRunPlacesSystemContextBeforeHistory(t *testing.T) {
 	}
 }
 
+func TestRunSkipsVisibleOnlyHistory(t *testing.T) {
+	store := &dialog.Store{Root: filepath.Join(t.TempDir(), "dialogs")}
+	for _, message := range []dialog.Message{
+		{Role: "user", Content: "earlier request"},
+		{Role: "assistant", Content: "workflow progress", VisibleOnly: true},
+	} {
+		if err := store.Append("d1", message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	provider := &finalProvider{}
+	if _, _, err := (&Engine{Provider: provider, Store: store}).Run(context.Background(), "d1", "new request"); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 1 || len(provider.requests[0]) != 2 {
+		t.Fatalf("messages=%#v", provider.requests)
+	}
+	for _, message := range provider.requests[0] {
+		if message.Content == "workflow progress" {
+			t.Fatalf("visible-only progress reached provider: %#v", provider.requests)
+		}
+	}
+}
+
 func TestRunResumeDoesNotDuplicateUserMessage(t *testing.T) {
 	store := &dialog.Store{Root: filepath.Join(t.TempDir(), "dialogs")}
 	if err := store.Append("d1", dialog.Message{Role: "user", Content: "hello"}); err != nil {

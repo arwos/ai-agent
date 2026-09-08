@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arwos/ai-agent/internal/pkg/dialog"
 	"github.com/arwos/ai-agent/internal/pkg/goal"
 	"github.com/arwos/ai-agent/internal/pkg/workflow"
 )
@@ -35,7 +34,7 @@ func (a *App) scheduleWorkflow(ctx context.Context, profileID, parentID, workspa
 		if err := goal.StartWorkflowTaskWithPolicy(g, task.ID, capabilities, "agent_id", task.ExecutorAgentID); err != nil {
 			return err
 		}
-		if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), *g); err != nil {
+		if err := a.dialogs.SaveGoal(a.dialogKey(profileID, parentID), *g); err != nil {
 			return err
 		}
 		a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": parentID, "goal": g}})
@@ -56,7 +55,7 @@ func (a *App) scheduleWorkflow(ctx context.Context, profileID, parentID, workspa
 	}
 	if allWorkflowTasksDone(g) {
 		g.Status = "done"
-		if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), *g); err != nil {
+		if err := a.dialogs.SaveGoal(a.dialogKey(profileID, parentID), *g); err != nil {
 			return err
 		}
 		a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": parentID, "goal": g}})
@@ -132,7 +131,7 @@ func workflowReviewerPrompt(g *goal.Goal, task *goal.GoalTask) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString("# Independent workflow review\n\n")
-	b.WriteString("Review the Builder result independently. Use only read-only tools. Do not change files or delegate work. Call `workflow.review_result` with `pass` only when every acceptance criterion has evidence; otherwise call it with `fail` and actionable feedback.\n\n")
+	b.WriteString("Review the Builder result independently. Use only read-only tools. Do not change files or delegate work. Judge only the stated acceptance criteria and the evidence provided; do not add unstated format or naming requirements. A value returned by an assigned user-interaction tool is evidence of the user's answer, even if it is shorter than the examples in the prompt. Call `workflow.review_result` with `pass` only when every acceptance criterion has evidence; otherwise call it with `fail` and actionable feedback.\n\n")
 	fmt.Fprintf(&b, "## User request\n%s\n\n## Step: %s\n%s\n\n## Acceptance criteria\n%s\n\n## Builder result\n%s\n", g.Request, step.Title, step.Description, step.Acceptance, task.LastResult)
 	if len(task.ResultMetadata) > 0 {
 		metadata, marshalErr := json.Marshal(task.ResultMetadata)
@@ -171,7 +170,7 @@ func (a *App) failWorkflowTask(profileID, parentID string, g *goal.Goal, taskID 
 		}
 	}
 	g.CurrentTaskID, g.Status = "", "failed"
-	if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), *g); err != nil {
+	if err := a.dialogs.SaveGoal(a.dialogKey(profileID, parentID), *g); err != nil {
 		return
 	}
 	a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": parentID, "goal": g}})

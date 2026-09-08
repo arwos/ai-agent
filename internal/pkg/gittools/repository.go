@@ -56,7 +56,9 @@ func Init(root *os.Root) (*Repository, error) {
 		return nil, errors.New("root is required")
 	}
 	if _, err := root.Stat(".git"); err == nil {
-		return nil, fmt.Errorf("git repository already exists")
+		// Initialization is intentionally idempotent: workflow steps may race
+		// with a previous attempt or receive a stale model decision to init.
+		return Open(root)
 	}
 	if err := root.Mkdir(".git", 0755); err != nil {
 		return nil, fmt.Errorf("create .git: %w", err)

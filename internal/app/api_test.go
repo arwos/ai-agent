@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.osspkg.com/goppy/v3/plugins/orm"
@@ -151,13 +153,13 @@ func sendPersistedApproval(t *testing.T, a *App, dialogID, requestID string, acc
 }
 
 func TestRestoreChildRunsIsIdempotent(t *testing.T) {
-	app, dialogs, store, database := newChildRecoveryApp(t)
+	app, dialogs, _, database := newChildRecoveryApp(t)
 	defer database.Close()
 	parentID, childID := "parent", "child"
-	if _, err := store.ConversationUpsert(models.Conversation{ID: parentID, ProfileID: "default", WorkspaceID: "default", Title: "parent"}); err != nil {
+	if _, err := dialogs.SaveConversation(models.Conversation{ID: parentID, ProfileID: "default", WorkspaceID: "default", Title: "parent"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ConversationUpsert(models.Conversation{ID: childID, ProfileID: "default", WorkspaceID: "default", ParentID: parentID, Title: "child"}); err != nil {
+	if _, err := dialogs.SaveConversation(models.Conversation{ID: childID, ProfileID: "default", WorkspaceID: "default", ParentID: parentID, Title: "child"}); err != nil {
 		t.Fatal(err)
 	}
 	parent := goal.Goal{ID: "goal-1", DialogID: parentID, Goal: "delegate work", Status: "running", Tasks: []goal.GoalTask{{ID: "task-1", Label: "child task", ChildDialogID: childID, RunTokenHash: "hash", Status: "waiting_agent"}}}
@@ -175,6 +177,31 @@ func TestRestoreChildRunsIsIdempotent(t *testing.T) {
 	}
 	if len(app.chatJobs) != 0 {
 		t.Fatalf("restore started duplicate jobs: %#v", app.chatJobs)
+	}
+}
+
+func TestPrepareConversationForChatKeepsChildMetadataNested(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	app := &App{dialogs: dialogs}
+	child := models.Conversation{ID: "child", ProfileID: "default", WorkspaceID: "workspace", AgentID: "builder", ParentID: "parent", Title: "Child task"}
+	if _, err := dialogs.SaveConversation(child); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := app.prepareConversationForChat("default", child.ID, chatSendQuery{
+		WorkspaceID: "other-workspace", AgentID: "other-agent", Content: "internal child instruction", Internal: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.ParentID != child.ParentID || conversation.WorkspaceID != child.WorkspaceID || conversation.AgentID != child.AgentID || conversation.Title != child.Title {
+		t.Fatalf("child metadata was overwritten: %#v", conversation)
+	}
+	nested := filepath.Join(dialogs.Root, "default", "parent", "subconversation", "child", "conversation.json")
+	if _, err := os.Stat(nested); err != nil {
+		t.Fatalf("nested child metadata is missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dialogs.Root, "default", "child", "conversation.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected root child metadata: %v", err)
 	}
 }
 
@@ -236,8 +263,24 @@ func TestAgentResultResumesParentWithoutSyntheticUserMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].Role != "user" || history[0].Content != "delegate work" {
-		t.Fatalf("agent.result added synthetic parent message: %#v", history)
+	if len(history) != 2 || history[0].Role != "user" || history[0].Content != "delegate work" || !history[1].VisibleOnly || !strings.Contains(history[1].Content, "Шаг выполнен: child task") {
+		t.Fatalf("workflow completion progress missing: %#v", history)
+	}
+}
+
+func TestCompactionMessagesSkipVisibleOnlyProgress(t *testing.T) {
+	messages := compactionMessages([]dialog.Message{
+		{Role: "user", Content: "request"},
+		{Role: "assistant", Content: "workflow progress", VisibleOnly: true},
+		{Role: "assistant", Content: "answer"},
+	}, "balanced")
+	if len(messages) != 3 || messages[0].Content != "request" || messages[1].Content != "answer" {
+		t.Fatalf("messages=%#v", messages)
+	}
+	for _, message := range messages {
+		if message.Content == "workflow progress" {
+			t.Fatalf("visible-only progress reached compaction: %#v", messages)
+		}
 	}
 }
 

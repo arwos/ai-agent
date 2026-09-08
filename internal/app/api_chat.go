@@ -42,6 +42,7 @@ type chatSendQuery struct {
 	AsGoal         bool     `json:"asGoal"`
 	Mode           string   `json:"mode"`
 	WorkflowID     string   `json:"workflow_id"`
+	Internal       bool     `json:"-"`
 }
 
 func validateChatMode(mode, workflowID string, asGoal bool) error {
@@ -61,6 +62,29 @@ func validateChatMode(mode, workflowID string, asGoal bool) error {
 		return nil
 	}
 	return nil
+}
+
+// prepareConversationForChat preserves the filesystem location and metadata of
+// an existing conversation. In particular, a child conversation must never be
+// recreated as a root conversation merely because its internal chat starts.
+func (a *App) prepareConversationForChat(profileID, conversationID string, q chatSendQuery) (models.Conversation, error) {
+	conversation, err := a.dialogs.Conversation(profileID, conversationID)
+	if errors.Is(err, dialog.ErrConversationNotFound) {
+		return a.dialogs.SaveConversation(models.Conversation{
+			ID:          conversationID,
+			ProfileID:   profileID,
+			WorkspaceID: q.WorkspaceID,
+			AgentID:     q.AgentID,
+			Title:       truncateTitle(q.Content),
+		})
+	}
+	if err != nil {
+		return models.Conversation{}, err
+	}
+	if conversation.ParentID == "" && !q.Resume {
+		conversation.Title = truncateTitle(q.Content)
+	}
+	return a.dialogs.SaveConversation(conversation)
 }
 
 func (a *App) chatSend(ev event.Event, meta ws.Meta) error {
@@ -225,7 +249,7 @@ func (a *App) dialogHistory(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	history, err := a.dialogs.History(dialog.SessionKey(profile, q.DialogID), q.Limit)
+	history, err := a.dialogs.History(a.dialogKey(profile, q.DialogID), q.Limit)
 	if err != nil {
 		return err
 	}
@@ -263,7 +287,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	if e != nil {
 		return e
 	}
-	q.DialogID = dialog.SessionKey(profileID, publicDialogID)
+	q.DialogID = a.dialogKey(profileID, publicDialogID)
 	var resumedGoal *goal.Goal
 	if q.Resume {
 		resumedGoal, e = a.dialogs.Goal(q.DialogID)
@@ -318,16 +342,16 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 	}
 	conversationID := publicDialogID
-	if _, e = a.store.ConversationUpsert(models.Conversation{ID: conversationID, ProfileID: profileID, WorkspaceID: q.WorkspaceID, AgentID: q.AgentID, Title: truncateTitle(q.Content)}); e != nil {
-		return e
-	}
-	conversation, e := a.store.Conversation(profileID, conversationID)
+	conversation, e := a.prepareConversationForChat(profileID, conversationID, q)
 	if e != nil {
 		return e
 	}
+	if conversation.ParentID != "" && !q.Internal {
+		return fmt.Errorf("child conversations are read-only")
+	}
 	if q.Resume && q.Model != "" {
 		conversation.ActiveModel = q.Model
-		if e = a.store.ConversationSetActiveModel(profileID, conversationID, q.Model); e != nil {
+		if _, e = a.dialogs.SaveConversation(conversation); e != nil {
 			return e
 		}
 	}
@@ -426,9 +450,12 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	// snapshot. The scheduler, rather than the Builder model, owns everything
 	// else in the workflow.
 	if child, ok := a.childRun(publicDialogID); ok && child.Role == childRoleBuilder {
-		parentGoal, goalErr := a.dialogs.Goal(dialog.SessionKey(profileID, child.ParentDialogID))
-		if goalErr != nil || parentGoal == nil {
+		parentGoal, goalErr := a.dialogs.Goal(a.dialogKey(profileID, child.ParentDialogID))
+		if goalErr != nil {
 			return fmt.Errorf("load workflow child goal: %w", goalErr)
+		}
+		if parentGoal == nil {
+			return fmt.Errorf("workflow child goal not found")
 		}
 		var task *goal.GoalTask
 		for index := range parentGoal.Tasks {
@@ -557,9 +584,12 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 	}
 	if child, ok := a.childRun(publicDialogID); ok && child.Role == childRoleBuilder {
-		parentGoal, goalErr := a.dialogs.Goal(dialog.SessionKey(profileID, child.ParentDialogID))
-		if goalErr != nil || parentGoal == nil {
+		parentGoal, goalErr := a.dialogs.Goal(a.dialogKey(profileID, child.ParentDialogID))
+		if goalErr != nil {
 			return fmt.Errorf("load workflow child goal: %w", goalErr)
+		}
+		if parentGoal == nil {
+			return fmt.Errorf("workflow child goal not found")
 		}
 		allowed := map[string]bool{}
 		for _, task := range parentGoal.Tasks {
@@ -594,9 +624,38 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	}
 	if child, ok := a.childRun(publicDialogID); ok {
 		if child.Role == childRoleReviewer {
-			extraTools = append(extraTools, toolexecutor.Tool{Name: "workflow.review_result", Description: "Submit the independent workflow review verdict."})
+			extraTools = append(extraTools, toolexecutor.Tool{
+				Name:        "workflow.review_result",
+				Description: "Submit the independent workflow review. verdict must be pass or fail; include actionable feedback when verdict is fail.",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"run_token": map[string]any{"type": "string", "description": "The exact run token from the task prompt."},
+						"verdict":   map[string]any{"type": "string", "enum": []string{"pass", "fail"}},
+						"summary":   map[string]any{"type": "string"},
+						"evidence":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"feedback":  map[string]any{"type": "string", "description": "Required when verdict is fail."},
+					},
+					"required": []string{"run_token", "verdict", "summary"},
+				},
+			})
 		} else {
-			extraTools = append(extraTools, toolexecutor.Tool{Name: "agent.result", Description: "Submit the canonical result to the parent agent."})
+			extraTools = append(extraTools, toolexecutor.Tool{
+				Name:        "agent.result",
+				Description: "Submit the canonical result to the parent agent. Include the exact run token from the task prompt.",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"run_token":     map[string]any{"type": "string"},
+						"status":        map[string]any{"type": "string", "enum": []string{"success", "failed"}},
+						"result":        map[string]any{"type": "string"},
+						"error":         map[string]any{"type": "string"},
+						"artifacts":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"changed_files": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"run_token", "status"},
+				},
+			})
 		}
 	} else {
 		extraTools = append(extraTools,
@@ -644,7 +703,8 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		model = mainModels[0]
 		if conversation.ActiveModel != "" {
 			// Discard selections from the removed fallback-model format.
-			_ = a.store.ConversationSetActiveModel(profileID, conversationID, "")
+			conversation.ActiveModel = ""
+			_, _ = a.dialogs.SaveConversation(conversation)
 		}
 	} else if len(profileProvider.Models) > 0 {
 		model = profileProvider.Models[0]

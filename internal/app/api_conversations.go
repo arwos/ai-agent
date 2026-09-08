@@ -24,6 +24,22 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/prompts"
 )
 
+func conversationDialogKey(profile string, item models.Conversation) string {
+	if item.ParentID != "" {
+		return dialog.SubconversationKey(profile, item.ParentID, item.ID)
+	}
+	return dialog.SessionKey(profile, item.ID)
+}
+
+func (a *App) dialogKey(profile, conversationID string) string {
+	if a.dialogs != nil {
+		if item, err := a.dialogs.Conversation(profile, conversationID); err == nil {
+			return conversationDialogKey(profile, item)
+		}
+	}
+	return dialog.SessionKey(profile, conversationID)
+}
+
 func (a *App) profileList(ev event.Event, _ ws.Meta) error {
 	if a.store == nil {
 		return ev.Encode(map[string]any{"profiles": []any{}, "activeId": "default"})
@@ -48,11 +64,21 @@ func (a *App) conversationList(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	items, err := a.store.Conversations(profile, q.WorkspaceID)
+	items, err := a.dialogs.Conversations(profile, q.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	return ev.Encode(items)
+	visible := make([]models.Conversation, 0, len(items))
+	for _, item := range items {
+		// A newly created dialog intentionally has no history until its first
+		// message. Other missing histories were removed outside the service and
+		// must not remain as ghost entries in the sidebar.
+		if item.Title != "New conversation" && !a.dialogs.Exists(conversationDialogKey(profile, item)) {
+			continue
+		}
+		visible = append(visible, item)
+	}
+	return ev.Encode(visible)
 }
 func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 	var q struct {
@@ -71,11 +97,11 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	item, err := a.store.Conversation(profile, q.ID)
+	item, err := a.dialogs.Conversation(profile, q.ID)
 	if err != nil {
 		return err
 	}
-	historyPage, err := a.dialogs.HistoryPage(dialog.SessionKey(profile, item.ID), q.BeforeID, q.AfterID, q.Limit)
+	historyPage, err := a.dialogs.HistoryPage(conversationDialogKey(profile, item), q.BeforeID, q.AfterID, q.Limit)
 	if err != nil {
 		return err
 	}
@@ -84,11 +110,11 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	goal, err := a.dialogs.Goal(dialog.SessionKey(profile, item.ID))
+	goal, err := a.dialogs.Goal(conversationDialogKey(profile, item))
 	if err != nil {
 		return err
 	}
-	goals, err := a.dialogs.Goals(dialog.SessionKey(profile, item.ID))
+	goals, err := a.dialogs.Goals(conversationDialogKey(profile, item))
 	if err != nil {
 		return err
 	}
@@ -122,7 +148,7 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 		}
 		messages = append(messages, map[string]any{"id": messageID, "role": role, "time": message.Timestamp.Format(time.RFC3339), "compact": message.Compact, "contextSize": message.ContextSize, "tokens": message.Tokens, "model": message.Model, "provider": message.Provider, "retryableError": message.Error, "parts": []map[string]string{{"type": "text", "content": message.Content}}})
 	}
-	return ev.Encode(map[string]any{"id": item.ID, "workspaceId": item.WorkspaceID, "agentId": item.AgentID, "title": item.Title, "updatedAt": item.UpdatedAt, "activeModel": item.ActiveModel, "messages": messages, "hasOlder": historyPage.HasOlder, "hasNewer": historyPage.HasNewer, "olderId": historyPage.OlderID, "newerId": historyPage.NewerID, "memory": memory, "goal": goal, "goals": goals})
+	return ev.Encode(map[string]any{"id": item.ID, "workspaceId": item.WorkspaceID, "agentId": item.AgentID, "parentId": item.ParentID, "title": item.Title, "updatedAt": item.UpdatedAt, "activeModel": item.ActiveModel, "messages": messages, "hasOlder": historyPage.HasOlder, "hasNewer": historyPage.HasNewer, "olderId": historyPage.OlderID, "newerId": historyPage.NewerID, "memory": memory, "goal": goal, "goals": goals})
 }
 func (a *App) conversationMemory(ev event.Event, meta ws.Meta) error {
 	var q struct {
@@ -143,7 +169,7 @@ func (a *App) conversationMemory(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	item, err := a.store.Conversation(profile, q.ID)
+	item, err := a.dialogs.Conversation(profile, q.ID)
 	if err != nil {
 		return err
 	}
@@ -181,7 +207,7 @@ func (a *App) conversationMemory(ev event.Event, meta ws.Meta) error {
 		}
 		return ev.Encode(memory)
 	}
-	history, err := a.dialogs.History(dialog.SessionKey(profile, item.ID), 0)
+	history, err := a.dialogs.History(conversationDialogKey(profile, item), 0)
 	if err != nil {
 		return err
 	}
@@ -413,18 +439,18 @@ func (a *App) conversationAppend(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	item, err := a.store.Conversation(profile, q.ConvID)
+	item, err := a.dialogs.Conversation(profile, q.ConvID)
 	if err != nil {
 		return err
 	}
 	content := q.Message.Parts[0].Content
-	if err = a.dialogs.Append(dialog.SessionKey(profile, item.ID), dialog.Message{Role: q.Message.Role, Content: content}); err != nil {
+	if err = a.dialogs.Append(conversationDialogKey(profile, item), dialog.Message{Role: q.Message.Role, Content: content}); err != nil {
 		return err
 	}
 	if q.Message.Role == "user" && item.Title == "New conversation" {
 		item.Title = truncateTitle(content)
 	}
-	item, err = a.store.ConversationUpsert(item)
+	item, err = a.dialogs.SaveConversation(item)
 	if err != nil {
 		return err
 	}
@@ -442,11 +468,11 @@ func (a *App) conversationCompact(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	item, err := a.store.Conversation(profile, q.ConvID)
+	item, err := a.dialogs.Conversation(profile, q.ConvID)
 	if err != nil {
 		return err
 	}
-	history, err := a.dialogs.History(dialog.SessionKey(profile, item.ID), 0)
+	history, err := a.dialogs.History(conversationDialogKey(profile, item), 0)
 	if err != nil {
 		return err
 	}
@@ -479,22 +505,7 @@ func (a *App) conversationCompact(ev event.Event, meta ws.Meta) error {
 	if err != nil {
 		return fmt.Errorf("compaction provider is not configured: %w", err)
 	}
-	messages := make([]llm.Message, 0, len(history)+1)
-	for _, message := range history {
-		role := message.Role
-		if role == "system" && message.Compact {
-			// A prior compaction is the durable boundary context. It must be
-			// available when the dialog is compacted again, otherwise each new
-			// compaction silently loses everything before the last boundary.
-			messages = append(messages, llm.Message{Role: role, Content: message.Content})
-			continue
-		}
-		if role != "user" && role != "assistant" && role != "tool" {
-			continue
-		}
-		messages = append(messages, llm.Message{Role: role, Content: message.Content})
-	}
-	messages = append(messages, llm.Message{Role: "user", Content: prompts.CompactionRequestFor(conversationAgent.CompactionLevel)})
+	messages := compactionMessages(history, conversationAgent.CompactionLevel)
 	var provider llm.Provider = llm.New(providerConfig.Kind, providerConfig.BaseURL, apiKey, q.Model, a.providerProxy(profile, providerConfig.ProxyID), llm.WithRPM(providerConfig.ID, providerConfig.RPM))
 	response, err := provider.ChatCompletion(meta.Context(), prompts.CompactionSystemFor(conversationAgent.CompactionLevel), messages, false)
 	if err != nil {
@@ -505,7 +516,7 @@ func (a *App) conversationCompact(ev event.Event, meta ws.Meta) error {
 	}
 	generated := parseGeneratedMemory(response.Content)
 	memory := generated.Memory
-	if err = a.dialogs.Append(dialog.SessionKey(profile, item.ID), dialog.Message{Role: "system", Content: memory.Summary, Model: q.Model, Provider: providerConfig.Name, ContextSize: response.Usage.CompletionTokens, Tokens: response.Usage.PromptTokens + response.Usage.CompletionTokens, Compact: true}); err != nil {
+	if err = a.dialogs.Append(conversationDialogKey(profile, item), dialog.Message{Role: "system", Content: memory.Summary, Model: q.Model, Provider: providerConfig.Name, ContextSize: response.Usage.CompletionTokens, Tokens: response.Usage.PromptTokens + response.Usage.CompletionTokens, Compact: true}); err != nil {
 		return err
 	}
 	before := 0
@@ -523,6 +534,28 @@ func (a *App) conversationCompact(ev event.Event, meta ws.Meta) error {
 		return err
 	}
 	return ev.Encode(map[string]any{"before": before, "after": response.Usage.CompletionTokens, "title": memory.Title, "summary": memory.Summary, "topics": memory.Topics, "tokens": tokens})
+}
+
+func compactionMessages(history []dialog.Message, level string) []llm.Message {
+	messages := make([]llm.Message, 0, len(history)+1)
+	for _, message := range history {
+		if message.VisibleOnly {
+			continue
+		}
+		role := message.Role
+		if role == "system" && message.Compact {
+			// A prior compaction is the durable boundary context. It must be
+			// available when the dialog is compacted again, otherwise each new
+			// compaction silently loses everything before the last boundary.
+			messages = append(messages, llm.Message{Role: role, Content: message.Content})
+			continue
+		}
+		if role != "user" && role != "assistant" && role != "tool" {
+			continue
+		}
+		messages = append(messages, llm.Message{Role: role, Content: message.Content})
+	}
+	return append(messages, llm.Message{Role: "user", Content: prompts.CompactionRequestFor(level)})
 }
 func (a *App) conversationUpsert(ev event.Event, _ ws.Meta) error {
 	var q models.Conversation
@@ -542,7 +575,7 @@ func (a *App) conversationUpsert(ev event.Event, _ ws.Meta) error {
 	if q.ID == "" {
 		q.ID = entityID("conversation")
 	}
-	conversation, err := a.store.ConversationUpsert(q)
+	conversation, err := a.dialogs.SaveConversation(q)
 	if err != nil {
 		return err
 	}
@@ -564,7 +597,7 @@ func (a *App) conversationSetModel(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := a.store.Conversation(profileID, q.ID)
+	conversation, err := a.dialogs.Conversation(profileID, q.ID)
 	if err != nil {
 		return err
 	}
@@ -583,7 +616,7 @@ func (a *App) conversationSetModel(ev event.Event, _ ws.Meta) error {
 	} else {
 		conversation.ActiveModel = ""
 	}
-	if err := a.store.ConversationSetActiveModel(profileID, q.ID, conversation.ActiveModel); err != nil {
+	if _, err := a.dialogs.SaveConversation(conversation); err != nil {
 		return err
 	}
 	return ev.Encode(conversation)
@@ -623,20 +656,40 @@ func (a *App) conversationDelete(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := a.store.Conversation(profile, q.ID)
+	conversation, err := a.dialogs.Conversation(profile, q.ID)
 	if err != nil {
 		return err
 	}
-	if err := a.dialogs.Delete(dialog.SessionKey(profile, conversation.ID)); err != nil {
+	items, err := a.dialogs.ProfileConversations(profile)
+	if err != nil {
 		return err
 	}
-	if err := a.memory.Delete(profile, conversation.WorkspaceID, conversation.ID); err != nil {
-		return err
+	children := make(map[string][]models.Conversation)
+	for _, item := range items {
+		if item.ParentID != "" {
+			children[item.ParentID] = append(children[item.ParentID], item)
+		}
 	}
-	if err := a.dialogs.DeleteGoals(dialog.SessionKey(profile, conversation.ID)); err != nil {
-		return err
+	var remove func(models.Conversation) error
+	remove = func(item models.Conversation) error {
+		for _, child := range children[item.ID] {
+			if err := remove(child); err != nil {
+				return err
+			}
+		}
+		key := conversationDialogKey(profile, item)
+		if err := a.dialogs.Delete(key); err != nil {
+			return err
+		}
+		if err := a.memory.Delete(profile, item.WorkspaceID, item.ID); err != nil {
+			return err
+		}
+		if err := a.dialogs.DeleteGoals(key); err != nil {
+			return err
+		}
+		return a.dialogs.DeleteConversation(item)
 	}
-	if err := a.store.ConversationDelete(profile, q.ID); err != nil {
+	if err := remove(conversation); err != nil {
 		return err
 	}
 	return ev.Encode(map[string]bool{"ok": true})
@@ -655,17 +708,17 @@ func (a *App) conversationClear(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := a.store.Conversation(profile, q.ID)
+	conversation, err := a.dialogs.Conversation(profile, q.ID)
 	if err != nil {
 		return err
 	}
-	if err := a.dialogs.Delete(dialog.SessionKey(profile, conversation.ID)); err != nil {
+	if err := a.dialogs.Delete(conversationDialogKey(profile, conversation)); err != nil {
 		return err
 	}
 	if err := a.memory.Delete(profile, conversation.WorkspaceID, conversation.ID); err != nil {
 		return err
 	}
-	if err := a.dialogs.DeleteGoals(dialog.SessionKey(profile, conversation.ID)); err != nil {
+	if err := a.dialogs.DeleteGoals(conversationDialogKey(profile, conversation)); err != nil {
 		return err
 	}
 	return ev.Encode(map[string]bool{"ok": true})
@@ -685,11 +738,11 @@ func (a *App) conversationDeleteMessage(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := a.store.Conversation(profile, q.ID)
+	conversation, err := a.dialogs.Conversation(profile, q.ID)
 	if err != nil {
 		return err
 	}
-	if err := a.dialogs.DeleteMessage(dialog.SessionKey(profile, conversation.ID), q.MessageID); err != nil {
+	if err := a.dialogs.DeleteMessage(conversationDialogKey(profile, conversation), q.MessageID); err != nil {
 		return err
 	}
 	return ev.Encode(map[string]bool{"ok": true})
@@ -764,7 +817,7 @@ func (a *App) profileDelete(ev event.Event, _ ws.Meta) error {
 	if !found {
 		return fmt.Errorf("profile %q not found", q.ID)
 	}
-	conversations, err := a.store.ProfileConversations(q.ID)
+	conversations, err := a.dialogs.ProfileConversations(q.ID)
 	if err != nil {
 		return err
 	}

@@ -529,7 +529,12 @@ function SidebarContent(props: Props) {
   } = props;
 
   const [wsOpen, setWsOpen] = useState(false);
+  const [openChildGroups, setOpenChildGroups] = useState<Set<string>>(() => new Set());
   const activeWs = workspaces.find((w) => w.id === activeWsId);
+  const conversationIDs = new Set(conversations.map((conversation) => conversation.id));
+  // Older runs may retain children after their parent was removed. Keep those
+  // conversations reachable instead of hiding the entire dialog list.
+  const rootConversations = conversations.filter((conversation) => !conversation.parentId || !conversationIDs.has(conversation.parentId));
 
   const NAV: { key: View; icon: typeof Boxes; count: number; rgb: string }[] = [
     {
@@ -689,52 +694,66 @@ function SidebarContent(props: Props) {
             {t("sidebar.dialogs").toUpperCase()}
           </Label>
           <div className="space-y-1">
-            {conversations.map((c) => {
+            {rootConversations.map((c) => {
               const ag = agents.find((a) => a.id === c.agentId);
               const active = c.id === activeConvId && view === "chat";
+              const children = conversations.filter((conversation) => conversation.parentId === c.id);
+              const childrenOpen = openChildGroups.has(c.id) || children.some((child) => child.id === activeConvId);
               return (
                 <div key={c.id} className="group relative">
-                  <button
-                    onClick={() => onConversation(c.id)}
-                    className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all ${
-                      active
-                        ? "border-white/[0.14] bg-white/[0.07]"
-                        : "border-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
-                    }`}
-                  >
-                    <span
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md"
-                      style={{
-                        background: ag
-                          ? `rgba(${(ACCENTS[ag.accent] ?? ACCENTS.indigo).rgb},0.12)`
-                          : "rgba(148,163,184,0.08)",
-                        boxShadow: ag
-                          ? `inset 0 0 0 1px rgba(${(ACCENTS[ag.accent] ?? ACCENTS.indigo).rgb},0.22)`
-                          : undefined,
-                      }}
+                  <div className="relative">
+                    <button
+                      onClick={() => onConversation(c.id)}
+                      className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 pr-16 text-left transition-all ${
+                        active
+                          ? "border-white/[0.14] bg-white/[0.07]"
+                          : "border-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
+                      }`}
                     >
-                      {ag ? (
-                        <ag.icon size={12} style={{ color: (ACCENTS[ag.accent] ?? ACCENTS.indigo).hex }} />
-                      ) : (
-                        <MessageSquare size={12} className="text-slate-500" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-[12px] ${active ? "text-slate-100" : "text-slate-300"}`}>
-                        {c.title}
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md" style={{
+                        background: ag ? `rgba(${(ACCENTS[ag.accent] ?? ACCENTS.indigo).rgb},0.12)` : "rgba(148,163,184,0.08)",
+                        boxShadow: ag ? `inset 0 0 0 1px rgba(${(ACCENTS[ag.accent] ?? ACCENTS.indigo).rgb},0.22)` : undefined,
+                      }}>
+                        {ag ? <ag.icon size={12} style={{ color: (ACCENTS[ag.accent] ?? ACCENTS.indigo).hex }} /> : <MessageSquare size={12} className="text-slate-500" />}
                       </span>
-                      <span className="block font-mono text-[8.5px] text-slate-600">
-                        {ag?.name} · {formatMessageTime(c.updatedAt)}
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[12px] ${active ? "text-slate-100" : "text-slate-300"}`}>{c.title}</span>
+                        <span className="block font-mono text-[8.5px] text-slate-600">{ag?.name} · {formatMessageTime(c.updatedAt)}</span>
                       </span>
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => onConversationDelete(c.id)}
-                    className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-slate-600 opacity-0 transition-all hover:bg-rose-500/15 hover:text-rose-300 group-hover:opacity-100"
-                    title={t("common.delete")}
-                  >
-                    <Trash2 size={11} />
-                  </button>
+                    </button>
+                    {children.length > 0 && (
+                      <button type="button" onClick={() => setOpenChildGroups((groups) => {
+                        const next = new Set(groups);
+                        if (next.has(c.id)) next.delete(c.id);
+                        else next.add(c.id);
+                        return next;
+                      })} className="absolute right-8 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-slate-600 transition-colors hover:bg-white/[0.07] hover:text-indigo-300" title={childrenOpen ? "Collapse child conversations" : "Expand child conversations"}>
+                        <ChevronDown size={12} className={childrenOpen ? "" : "-rotate-90"} />
+                      </button>
+                    )}
+                    <button onClick={() => onConversationDelete(c.id)} className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-slate-600 opacity-0 transition-all hover:bg-rose-500/15 hover:text-rose-300 group-hover:opacity-100" title={t("common.delete")}>
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                  {childrenOpen && children.length > 0 && (
+                    <div className="ml-5 mt-1 space-y-1 border-l border-white/[0.08] pl-2">
+                      {children.map((child) => {
+                        const childAgent = agents.find((agent) => agent.id === child.agentId);
+                        const childActive = child.id === activeConvId && view === "chat";
+                        return (
+                          <button
+                            key={child.id}
+                            onClick={() => onConversation(child.id)}
+                            className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${childActive ? "bg-white/[0.07] text-slate-100" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"}`}
+                          >
+                            <MessageSquare size={10} className="shrink-0 text-cyan-400/70" />
+                            <span className="min-w-0 flex-1 truncate text-[10px]">{child.title}</span>
+                            <span className="shrink-0 font-mono text-[8px] text-slate-600">{childAgent?.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

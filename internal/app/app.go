@@ -274,7 +274,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 			if profileErr != nil {
 				return profileErr
 			}
-			goal, goalErr := a.dialogs.Goal(dialog.SessionKey(profileID, input.ConvID))
+			goal, goalErr := a.dialogs.Goal(a.dialogKey(profileID, input.ConvID))
 			if goalErr != nil {
 				return goalErr
 			}
@@ -296,7 +296,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 					}
 				}
 			}
-			if saveErr := a.dialogs.SaveGoal(dialog.SessionKey(profileID, input.ConvID), *goal); saveErr != nil {
+			if saveErr := a.dialogs.SaveGoal(a.dialogKey(profileID, input.ConvID), *goal); saveErr != nil {
 				return saveErr
 			}
 			a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": input.ConvID, "goal": goal}})
@@ -332,7 +332,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 		if err != nil {
 			return err
 		}
-		goal, err := a.dialogs.Goal(dialog.SessionKey(profileID, input.ConvID))
+		goal, err := a.dialogs.Goal(a.dialogKey(profileID, input.ConvID))
 		if err != nil {
 			return err
 		}
@@ -350,7 +350,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 			goalpkg.CancelWorkflowTasks(goal)
 		}
 		goal.Approval = nil
-		if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, input.ConvID), *goal); err != nil {
+		if err := a.dialogs.SaveGoal(a.dialogKey(profileID, input.ConvID), *goal); err != nil {
 			return err
 		}
 		a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": input.ConvID, "goal": goal}})

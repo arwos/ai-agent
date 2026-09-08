@@ -406,9 +406,17 @@ function Shell() {
 
   const loadConvs = useCallback(async (wsId: string) => {
     const metas = await wsRequest<(Omit<Conversation, "messages"> & { count?: number })[]>(41, { workspaceId: wsId });
-    const full = (await Promise.all(metas.map((m) => wsRequest<Conversation | null>(42, { id: m.id, limit: HISTORY_PAGE_SIZE })))).filter(
-      (x): x is Conversation => x !== null,
-    );
+    // The list response is the authoritative source for hierarchy metadata.
+    // Keep its parentId while hydrating messages so a child never briefly (or
+    // after a partial response) appears as a top-level conversation.
+    const full = (
+      await Promise.all(
+        metas.map(async (meta): Promise<Conversation | null> => {
+          const conversation = await wsRequest<Conversation | null>(42, { id: meta.id, limit: HISTORY_PAGE_SIZE });
+          return conversation ? { ...conversation, parentId: conversation.parentId || meta.parentId } : null;
+        }),
+      )
+    ).filter((conversation): conversation is Conversation => conversation !== null);
     setConvs(full);
     const linked = hashState().conversationId;
     const first = full.find((conversation) => conversation.id === linked) ?? full[0] ?? null;
@@ -469,6 +477,17 @@ function Shell() {
       const dialogId = String(fr.convId ?? "");
       const childDialogId = String(fr.child_dialog_id ?? "");
       if (!dialogId || !childDialogId) return;
+      const refreshConversation = async (id: string) => {
+        const conversation = await wsRequest<Conversation | null>(WS_EVENT_CONVERSATION_GET, { id, limit: HISTORY_PAGE_SIZE });
+        if (!conversation) return;
+        setConvs((items) => {
+          const index = items.findIndex((item) => item.id === id);
+          if (index < 0) return [conversation, ...items];
+          const next = [...items];
+          next[index] = conversation;
+          return next;
+        });
+      };
       const next: ChildRunFrame = {
         dialogId,
         childDialogId,
@@ -479,6 +498,11 @@ function Shell() {
         ...items,
         [dialogId]: [...(items[dialogId] ?? []).filter((item) => item.childDialogId !== childDialogId), next],
       }));
+      if (fr.status === "success" || fr.status === "failed" || fr.status === "stopped") {
+        void refreshConversation(dialogId).then(() => setActiveConvId(dialogId)).catch(() => undefined);
+      } else {
+        void refreshConversation(childDialogId).then(() => setActiveConvId(childDialogId)).catch(() => undefined);
+      }
       return;
     }
     switch (fr.type) {
@@ -846,6 +870,10 @@ function Shell() {
     workflowId?: string,
   ) => {
     if (!activeWsId || busy) return;
+	if (activeConvId && convs.some((conversation) => conversation.id === activeConvId && conversation.parentId)) {
+	  notify("err", "Child conversations are read-only");
+	  return;
+	}
     setBusy(true);
     let convId = activeConvId;
     // A workspace can intentionally start with no conversations. The first
@@ -1073,8 +1101,19 @@ function Shell() {
   };
 
   const deleteConversation = async (id: string) => {
-    const next = convs.filter((c) => c.id !== id);
     await wsRequest(54, { id });
+    const removed = new Set([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const conversation of convs) {
+        if (conversation.parentId && removed.has(conversation.parentId) && !removed.has(conversation.id)) {
+          removed.add(conversation.id);
+          changed = true;
+        }
+      }
+    }
+    const next = convs.filter((c) => !removed.has(c.id));
     setConvs(next);
     if (activeConvId === id) {
       setActiveConvId(next[0]?.id ?? null);

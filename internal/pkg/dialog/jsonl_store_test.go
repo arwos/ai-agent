@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/arwos/ai-agent/internal/pkg/goal"
+	"github.com/arwos/ai-agent/internal/pkg/models"
 )
 
 func TestConcurrentAppendAndHistoryLimit(t *testing.T) {
@@ -40,6 +41,57 @@ func TestHistoryPageForEmptyDialog(t *testing.T) {
 	page, err := s.HistoryPage(SessionKey("profile", "empty"), "", "", 20)
 	if err != nil || len(page.Messages) != 0 || page.HasOlder || page.HasNewer {
 		t.Fatalf("page=%#v err=%v", page, err)
+	}
+}
+
+func TestSubconversationHistoryUsesParentDirectoryAndReadsLegacyPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "dialogs")
+	s := &Store{Root: root}
+	key := SubconversationKey("profile", "parent", "child")
+	if err := s.Append(key, Message{Role: "user", Content: "child request"}); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "profile", "parent", "subconversation", "child", "history.jsonl")
+	if path := s.historyPath(key); path != want {
+		t.Fatalf("history path=%q, want %q", path, want)
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("nested child history is missing: %v", err)
+	}
+
+	legacy := &Store{Root: filepath.Join(t.TempDir(), "dialogs")}
+	if err := legacy.Append(SessionKey("profile", "child"), Message{Role: "user", Content: "legacy child request"}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := legacy.History(SubconversationKey("profile", "parent", "child"), 0)
+	if err != nil || len(history) != 1 || history[0].Content != "legacy child request" {
+		t.Fatalf("legacy child history=%#v err=%v", history, err)
+	}
+}
+
+func TestConversationMetadataUsesChildDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "dialogs")
+	store := NewStore(root)
+	child := models.Conversation{ID: "child", ProfileID: "profile", WorkspaceID: "workspace", ParentID: "parent", Title: "Child task"}
+	if _, err := store.SaveConversation(child); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "profile", "parent", "subconversation", "child", conversationMetaFile)
+	if _, err := os.Stat(nested); err != nil {
+		t.Fatalf("nested child metadata is missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "profile", "child", conversationMetaFile)); !os.IsNotExist(err) {
+		t.Fatalf("unexpected root child metadata: %v", err)
+	}
+	stored, err := store.Conversation("profile", "child")
+	if err != nil || stored.ParentID != "parent" {
+		t.Fatalf("stored child=%#v err=%v", stored, err)
+	}
+	if _, err := store.SaveConversation(models.Conversation{ID: "root", ProfileID: "profile", WorkspaceID: "workspace", Title: "Root"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "profile", "root", conversationMetaFile)); err != nil {
+		t.Fatalf("root metadata is missing: %v", err)
 	}
 }
 

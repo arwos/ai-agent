@@ -119,7 +119,7 @@ Modes are selected per message and are not stored on the agent profile:
 
 Goals remain the runtime state for a request. Workflow steps are copied into the goal as an immutable run snapshot; descriptive substeps are instructions within a step, not separate tasks. A rejected review automatically retries the Builder within its configured limit; after that limit the workflow stops.
 
-Delegated agents run in separate persisted child conversations linked to the parent. A child cannot delegate again and must return its result through the `agent.result` callback. The callback uses a one-time run token and is checked against the profile, parent, child, task, and completion state. Pending parent and child state survives service restart; a pending child is reconstructed from its immutable snapshot, and duplicate or late callbacks are rejected.
+Delegated agents run in separate persisted child conversations linked to the parent. A child cannot delegate again and must return its result through the `agent.result` callback. The callback uses a one-time run token and is checked against the profile, parent, child, task, and completion state. Callback tools are advertised with explicit JSON schemas: arguments are flat fields and the token must be copied exactly from the child prompt. Pending parent and child state survives service restart; a pending child is reconstructed from its immutable snapshot, and duplicate or late callbacks are rejected.
 
 ### Skills, knowledge, and memory
 
