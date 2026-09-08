@@ -165,11 +165,14 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 	}
 	if q.Source == "link" {
 		if isArchiveURL(q.Ref) {
+			if err := validateExternalURL(q.Ref); err != nil {
+				return err
+			}
 			req, err := http.NewRequestWithContext(meta.Context(), http.MethodGet, q.Ref, nil)
 			if err != nil {
 				return err
 			}
-			response, err := http.DefaultClient.Do(req)
+			response, err := externalHTTPClient().Do(req)
 			if err != nil {
 				return err
 			}
@@ -209,11 +212,14 @@ func (a *App) skillsDiscover(ev event.Event, meta ws.Meta) error {
 			return discoverSkillDirectory(ev, tmp, q.Ref)
 		}
 		requestURL := rawGitFileURL(q.Ref)
+		if err := validateExternalURL(requestURL); err != nil {
+			return err
+		}
 		req, err := http.NewRequestWithContext(meta.Context(), http.MethodGet, requestURL, nil)
 		if err != nil {
 			return err
 		}
-		response, err := http.DefaultClient.Do(req)
+		response, err := externalHTTPClient().Do(req)
 		if err != nil {
 			return err
 		}
@@ -321,6 +327,9 @@ func (a *App) skillsImportMany(ev event.Event, _ ws.Meta) error {
 	created := make([]models.Skill, 0, len(q.Items))
 	var gitRoot string
 	if q.Source == "link" && len(q.Items) > 0 && q.Items[0].SourceRef != "" {
+		if !isGitRepositoryURL(q.Items[0].SourceRef) {
+			return fmt.Errorf("skill repository URL is invalid")
+		}
 		gitRoot, err = os.MkdirTemp("", "arwos-skills-import-")
 		if err != nil {
 			return err
@@ -335,7 +344,20 @@ func (a *App) skillsImportMany(ev event.Event, _ ws.Meta) error {
 		if item.Name == "" || item.Content == "" {
 			return fmt.Errorf("imported skill must have name and content")
 		}
-		out, err := a.skills.Upsert(models.Skill{ID: entityID("skill"), ProfileID: profileID, Name: item.Name, Description: item.Description, Content: item.Content, Icon: item.Icon, Accent: item.Accent, Enabled: true, Source: q.Source, SourceRef: item.Origin})
+		if gitRoot != "" {
+			if item.SourceRef != q.Items[0].SourceRef {
+				return fmt.Errorf("all imported skills must use the discovered repository")
+			}
+			cleanPath := filepath.Clean(filepath.FromSlash(item.SourcePath))
+			if cleanPath == "." || cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanPath) {
+				return fmt.Errorf("skill source path is outside repository")
+			}
+		}
+		sourceRef := item.Origin
+		if q.Source == "link" {
+			sourceRef = item.SourceRef
+		}
+		out, err := a.skills.Upsert(models.Skill{ID: entityID("skill"), ProfileID: profileID, Name: item.Name, Description: item.Description, Content: item.Content, Icon: item.Icon, Accent: item.Accent, Enabled: true, Source: q.Source, SourceRef: sourceRef})
 		if err != nil {
 			return err
 		}

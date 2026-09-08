@@ -24,6 +24,36 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
 
+// activeWorkspace returns a root only when it is registered for the active
+// profile. Roots are process-wide for lifecycle management, but must not be
+// shared by file operations across profiles.
+func (a *App) activeWorkspace(id string) (*workspace.Service, error) {
+	if id == "" {
+		id = "default"
+	}
+	if a.store != nil {
+		profile, err := a.activeProfile()
+		if err != nil {
+			return nil, err
+		}
+		items, err := a.store.Workspaces(profile)
+		if err != nil {
+			return nil, err
+		}
+		owned := false
+		for _, item := range items {
+			if item.ID == id {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			return nil, fmt.Errorf("workspace %q is not available in the active profile", id)
+		}
+	}
+	return a.workspaces.Get(id)
+}
+
 func (a *App) filesList(ev event.Event, _ ws.Meta) error {
 	var q struct {
 		WorkspaceID string `json:"workspaceId"`
@@ -35,7 +65,7 @@ func (a *App) filesList(ev event.Event, _ ws.Meta) error {
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -59,7 +89,7 @@ func (a *App) filesRead(ev event.Event, _ ws.Meta) error {
 	if q.FileID == "" {
 		return fmt.Errorf("fileId is required")
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -98,7 +128,7 @@ func (a *App) filesWrite(ev event.Event, _ ws.Meta) error {
 	if q.FileID == "" {
 		return fmt.Errorf("fileId is required")
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -121,7 +151,7 @@ func (a *App) filesAdd(ev event.Event, _ ws.Meta) error {
 	if q.Name == "" {
 		return fmt.Errorf("name is required")
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -144,7 +174,7 @@ func (a *App) filesRemove(ev event.Event, _ ws.Meta) error {
 	if q.FileID == "" {
 		return fmt.Errorf("fileId is required")
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -164,7 +194,7 @@ func (a *App) workspaceList(ev event.Event, _ ws.Meta) error {
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -188,7 +218,7 @@ func (a *App) workspaceRead(ev event.Event, _ ws.Meta) error {
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -213,7 +243,7 @@ func (a *App) workspaceWrite(ev event.Event, _ ws.Meta) error {
 	if q.WorkspaceID == "" {
 		q.WorkspaceID = "default"
 	}
-	w, err := a.workspaces.Get(q.WorkspaceID)
+	w, err := a.activeWorkspace(q.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -274,6 +304,9 @@ func (a *App) workspaceGet(ev event.Event, _ ws.Meta) error {
 	}
 	if q.ID == "" {
 		return fmt.Errorf("workspace id is required")
+	}
+	if _, err := a.activeWorkspace(q.ID); err != nil {
+		return err
 	}
 	entry, err := a.workspaces.Entry(q.ID)
 	if err != nil {
@@ -367,6 +400,9 @@ func (a *App) workspaceClose(ev event.Event, _ ws.Meta) error {
 	}
 	if q.ID == "" {
 		return fmt.Errorf("workspace id is required")
+	}
+	if _, err := a.activeWorkspace(q.ID); err != nil {
+		return err
 	}
 	if a.store != nil {
 		profile, profileErr := a.activeProfile()

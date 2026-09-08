@@ -107,11 +107,14 @@ func (a *App) kbImportLink(ev event.Event, meta ws.Meta) error {
 	if q.URL == "" {
 		return fmt.Errorf("url is required")
 	}
+	if err := validateExternalURL(q.URL); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(meta.Context(), http.MethodGet, q.URL, nil)
 	if err != nil {
 		return err
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := externalHTTPClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -148,14 +151,31 @@ func (a *App) kbScanFolder(ev event.Event, _ ws.Meta) error {
 	}
 	root := filepath.Clean(q.Path)
 	allowed := false
-	for _, e := range a.workspaces.List() {
-		if filepath.Clean(e.Path) == root {
-			allowed = true
-			break
+	if a.store != nil {
+		profile, profileErr := a.activeProfile()
+		if profileErr != nil {
+			return profileErr
+		}
+		items, listErr := a.store.Workspaces(profile)
+		if listErr != nil {
+			return listErr
+		}
+		for _, item := range items {
+			if filepath.Clean(item.FolderPath) == root {
+				allowed = true
+				break
+			}
+		}
+	} else {
+		for _, item := range a.workspaces.List() {
+			if filepath.Clean(item.Path) == root {
+				allowed = true
+				break
+			}
 		}
 	}
 	if !allowed {
-		return fmt.Errorf("folder must be an opened workspace")
+		return fmt.Errorf("folder must be an opened workspace in the active profile")
 	}
 	out := []map[string]any{}
 	err := filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
@@ -190,6 +210,33 @@ func (a *App) kbImportFiles(ev event.Event, _ ws.Meta) error {
 		return err
 	}
 	root := filepath.Clean(q.Folder)
+	allowed := false
+	if a.store != nil {
+		profile, profileErr := a.activeProfile()
+		if profileErr != nil {
+			return profileErr
+		}
+		items, listErr := a.store.Workspaces(profile)
+		if listErr != nil {
+			return listErr
+		}
+		for _, item := range items {
+			if filepath.Clean(item.FolderPath) == root {
+				allowed = true
+				break
+			}
+		}
+	} else {
+		for _, item := range a.workspaces.List() {
+			if filepath.Clean(item.Path) == root {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
+		return fmt.Errorf("folder must be an opened workspace in the active profile")
+	}
 	profile, err := a.activeProfile()
 	if err != nil {
 		return err
