@@ -531,10 +531,18 @@ function SidebarContent(props: Props) {
   const [wsOpen, setWsOpen] = useState(false);
   const [openChildGroups, setOpenChildGroups] = useState<Set<string>>(() => new Set());
   const activeWs = workspaces.find((w) => w.id === activeWsId);
-  const conversationIDs = new Set(conversations.map((conversation) => conversation.id));
+  const conversationsByID = new Map<string, Conversation>();
+  for (const conversation of conversations) {
+    const existing = conversationsByID.get(conversation.id);
+    // Live frames can race with a hydration request. When they do, preserve
+    // the copy linked to its parent rather than rendering both copies.
+    if (!existing || (!existing.parentId && conversation.parentId)) conversationsByID.set(conversation.id, conversation);
+  }
+  const visibleConversations = [...conversationsByID.values()];
+  const conversationIDs = new Set(visibleConversations.map((conversation) => conversation.id));
   // Older runs may retain children after their parent was removed. Keep those
   // conversations reachable instead of hiding the entire dialog list.
-  const rootConversations = conversations.filter((conversation) => !conversation.parentId || !conversationIDs.has(conversation.parentId));
+  const rootConversations = visibleConversations.filter((conversation) => !conversation.parentId || !conversationIDs.has(conversation.parentId));
 
   const NAV: { key: View; icon: typeof Boxes; count: number; rgb: string }[] = [
     {
@@ -697,7 +705,7 @@ function SidebarContent(props: Props) {
             {rootConversations.map((c) => {
               const ag = agents.find((a) => a.id === c.agentId);
               const active = c.id === activeConvId && view === "chat";
-              const children = conversations.filter((conversation) => conversation.parentId === c.id);
+              const children = visibleConversations.filter((conversation) => conversation.parentId === c.id);
               const childrenOpen = openChildGroups.has(c.id) || children.some((child) => child.id === activeConvId);
               return (
                 <div key={c.id} className="group relative">
@@ -757,7 +765,7 @@ function SidebarContent(props: Props) {
                 </div>
               );
             })}
-            {conversations.length === 0 && (
+            {visibleConversations.length === 0 && (
               <p className="px-2 py-1 text-[11px] text-slate-600">{t("sidebar.noDialogs")}</p>
             )}
           </div>

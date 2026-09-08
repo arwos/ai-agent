@@ -8,6 +8,7 @@ package gittools
 import (
 	"errors"
 	"fmt"
+	iofs "io/fs"
 	"os"
 
 	"github.com/go-git/go-billy/v6"
@@ -55,10 +56,28 @@ func Init(root *os.Root) (*Repository, error) {
 	if root == nil {
 		return nil, errors.New("root is required")
 	}
-	if _, err := root.Stat(".git"); err == nil {
+	if info, err := root.Stat(".git"); err == nil {
 		// Initialization is intentionally idempotent: workflow steps may race
 		// with a previous attempt or receive a stale model decision to init.
-		return Open(root)
+		repo, openErr := Open(root)
+		if openErr == nil {
+			return repo, nil
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("open existing .git: %w", openErr)
+		}
+		entries, readErr := iofs.ReadDir(root.FS(), ".git")
+		if readErr != nil || len(entries) != 0 {
+			return nil, fmt.Errorf("open existing .git: %w", openErr)
+		}
+		// A failed initialization used to leave an empty .git directory. It
+		// contains no Git metadata or user data, so remove only this safe,
+		// recoverable marker and retry initialization from a clean state.
+		if err := root.Remove(".git"); err != nil {
+			return nil, fmt.Errorf("remove incomplete .git: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat .git: %w", err)
 	}
 	if err := root.Mkdir(".git", 0755); err != nil {
 		return nil, fmt.Errorf("create .git: %w", err)
@@ -75,6 +94,9 @@ func Init(root *os.Root) (*Repository, error) {
 	repository, err := git.Init(storage, git.WithWorkTree(worktree))
 	if err != nil {
 		_ = storage.Close()
+		if entries, readErr := iofs.ReadDir(root.FS(), ".git"); readErr == nil && len(entries) == 0 {
+			_ = root.Remove(".git")
+		}
 		return nil, err
 	}
 	return &Repository{root: root, worktree: worktree, repo: repository}, nil

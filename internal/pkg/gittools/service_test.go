@@ -103,6 +103,34 @@ func TestInitCreatesGitDirectoryBelowRoot(t *testing.T) {
 	}
 }
 
+func TestInitRepairsEmptyGitDirectoryBelowRoot(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := root.Mkdir(".git", 0755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := Init(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.Stat(".git/HEAD"); err != nil {
+		t.Fatalf("repaired repository has no HEAD: %v", err)
+	}
+	opened, err := Open(root)
+	if err != nil {
+		t.Fatalf("repaired repository cannot be opened: %v", err)
+	}
+	if err := opened.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func containsAll(value string, parts ...string) bool {
 	for _, part := range parts {
 		if !strings.Contains(value, part) {

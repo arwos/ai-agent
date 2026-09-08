@@ -6,6 +6,8 @@ Arwos AI Agent is a local, profile-aware AI workspace: a Go 1.26 service with an
 
 The service is local-first. Keep it bound to localhost unless external access control is explicitly added. `/api/ws` is the only browser transport; do not add REST or HTTP JSON-RPC APIs for screens.
 
+`AGENTS.md` is the instruction source for agents. `README.md` and `docs/` are human-facing service documentation; agents may read them for product, protocol, and operational context, but they do not define agent behavior.
+
 ## Repository map
 
 ```text
@@ -87,6 +89,8 @@ datasource/knowledge/{profileId}/documents/ and index/
 datasource/skills/{profileId}/
 datasource/llm/
 ```
+
+Never modify any path matched by `.gitignore`: it is local runtime state, generated output, or developer-specific configuration. This includes ignored `datasource/` subdirectories such as dialogs, workflow definitions, skills, indexes, databases, models, and other runtime data. `datasource/migration/` is not ignored; add new migration files there only when a schema change requires one.
 
 With `asGoal: true`, generate and persist a concise plan before execution without inserting planning prose into history. Advance tasks only from actual AgentEngine tool callbacks. Successful but unneeded planned tasks are `skipped`, never `done`. Without `asGoal`, create a goal only after the first real tool callback. `goal.json` is current state and `goals.jsonl` is append-only history; `conversation.get` returns session memory and both goal forms.
 

@@ -493,22 +493,15 @@ function Shell() {
           // Stream frames are broadcast to every open client. Add the child
           // only when its parent belongs to the currently loaded workspace.
           if (!items.some((item) => item.id === dialogId)) return items;
-          const index = items.findIndex((item) => item.id === childDialogId);
-          if (index < 0) return [childConversation, ...items];
-          const next = [...items];
-          next[index] = { ...next[index], ...childConversation, messages: next[index].messages };
-          return next;
+          const existing = items.find((item) => item.id === childDialogId);
+          return [{ ...existing, ...childConversation, messages: existing?.messages ?? [] }, ...items.filter((item) => item.id !== childDialogId)];
         });
       }
       const refreshConversation = async (id: string) => {
         const conversation = await wsRequest<Conversation | null>(WS_EVENT_CONVERSATION_GET, { id, limit: HISTORY_PAGE_SIZE });
         if (!conversation) return;
         setConvs((items) => {
-          const index = items.findIndex((item) => item.id === id);
-          if (index < 0) return [conversation, ...items];
-          const next = [...items];
-          next[index] = conversation;
-          return next;
+          return [conversation, ...items.filter((item) => item.id !== id)];
         });
       };
       const next: ChildRunFrame = {
