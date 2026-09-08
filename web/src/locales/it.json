@@ -25,10 +25,15 @@
     "type": "Type",
     "openMenu": "Open menu",
     "back": "Back to chat",
+    "preview": "Anteprima",
     "previous": "Previous page",
     "next": "Next page"
   },
-  "theme": { "toggle": "Cambia schema colori", "light": "Chiaro", "dark": "Scuro" },
+  "theme": {
+    "toggle": "Cambia schema colori",
+    "light": "Chiaro",
+    "dark": "Scuro"
+  },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -51,6 +56,16 @@
     "thinking": "Thinking",
     "executing": "Executing"
   },
+  "subagent": {
+    "title": "Agenti secondari",
+    "status": {
+      "waiting_agent": "In attesa",
+      "reviewing": "Revisione",
+      "completed": "Completato",
+      "failed": "Fallito",
+      "stopped": "Fermato"
+    }
+  },
   "system": {
     "online": "AI Online",
     "offline": "AI Offline",
@@ -66,6 +81,7 @@
     "kb": "Knowledge Base",
     "network": "Network",
     "memory": "Memory",
+    "workflows": "Workflow",
     "systemInfo": "Local LLMs",
     "proxies": "Proxy servers",
     "notes": "Long-term notes",
@@ -115,7 +131,12 @@
   },
   "header": {
     "genParams": "GENERATION PARAMS",
-    "preset": { "strict": "Strict", "reasoned": "Reasoned", "balanced": "Balanced", "creative": "Creative" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Reasoned",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
     "temperature": "Temperature",
     "topP": "Top-P",
     "clearHistory": "Clear history",
@@ -133,6 +154,7 @@
     "deleteDialogFiles": "The JSONL history and session memory file will be removed. Long-term notes and topic memories are kept.",
     "deleteDialogConfirm": "Delete dialog",
     "today": "TODAY",
+    "decodeError": "Impossibile decodificare questo messaggio",
     "thinking": "{name} is analyzing the request…",
     "executing": "Executing · generating response…",
     "copy": "Copy",
@@ -176,7 +198,18 @@
     "modeHint": "Choose how to handle this request",
     "modeTitle": "REQUEST MODE",
     "workflowSelect": "Select workflow",
-    "mode": { "normal": "Normal", "plan": "Piano", "consult": "Consultazione", "workflow": "Workflow" }
+    "mode": {
+      "normal": "Normal",
+      "plan": "Piano",
+      "consult": "Consultazione",
+      "workflow": "Workflow"
+    },
+    "modeDescription": {
+      "normal": "Completa normalmente la richiesta",
+      "plan": "Crea un piano prima di agire",
+      "consult": "Rispondi senza modificare i file",
+      "workflow": "Esegui un workflow configurato"
+    }
   },
   "panel": {
     "ctx": "Session context",
@@ -360,6 +393,59 @@
     "userInvocable": "Available to user",
     "disableModelInvocation": "Do not invoke automatically"
   },
+  "workflow": {
+    "title": "WORKFLOWS",
+    "new": "New workflow",
+    "edit": "Edit workflow",
+    "id": "Workflow ID",
+    "addStep": "Add step",
+    "step": "Step",
+    "stepId": "Step ID",
+    "stepTitle": "Step title",
+    "executor": "Executor",
+    "executor_self": "Self",
+    "executor_auto": "Automatic",
+    "executor_agent_id": "Agent",
+    "agentId": "Agent ID",
+    "retry": "Retry limit",
+    "storage": "Storage path",
+    "validation": "Validation",
+    "acceptance": "Criteri di accettazione",
+    "review": "Review",
+    "dependencies": "Dependencies",
+    "tools": "Required tools",
+    "skills": "Required skills",
+    "skillGroups": "Skill groups",
+    "substeps": "Substeps",
+    "substepId": "Substep ID",
+    "add": "Add",
+    "refresh": "Refresh",
+    "import": "Import YAML",
+    "export": "Export YAML",
+    "copy": "Copy",
+    "download": "Download",
+    "duplicate": "Duplicate",
+    "copySuffix": "copy",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "steps": "steps",
+    "empty": "No workflows yet.",
+    "deleteConfirm": "Delete workflow {name}?",
+    "deleted": "Workflow deleted",
+    "saved": "Workflow {name} saved",
+    "imported": "Workflow imported",
+    "importError": "YAML import failed: {error}",
+    "copied": "YAML copied",
+    "exportTitle": "Workflow YAML",
+    "saving": "Salvataggio…",
+    "savedState": "Salvato",
+    "unsaved": "Le modifiche sono salvate localmente",
+    "validationError": "Completa i campi evidenziati",
+    "dependencyOrder": "Non puoi spostare un passaggio prima di una dipendenza",
+    "selectAgent": "Seleziona un agente",
+    "noDependencies": "Nessun passaggio precedente disponibile",
+    "resourcesAtRun": "Le risorse vengono verificate con l’agente scelto all’avvio del flusso"
+  },
   "systemInfo": {
     "title": "Local LLMs",
     "subtitle": "Hardware resources of the current system",
@@ -372,7 +458,10 @@
     "installedLlama": "llama.app installed",
     "updateLlama": "Update llama.app",
     "installLlama": "Install llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Processor",
     "memory": "System memory",
     "gpu": "Graphics card",
@@ -395,7 +484,10 @@
       "lb": "llama.app binaries",
       "lm": "llama.app models"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Binary path",
     "launchArgs": "Launch arguments separated by spaces",
     "modelsPath": "Models folder",

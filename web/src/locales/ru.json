@@ -25,6 +25,7 @@
     "type": "Тип",
     "openMenu": "Открыть меню",
     "back": "К чату",
+    "preview": "Предпросмотр",
     "previous": "Предыдущая страница",
     "next": "Следующая страница"
   },
@@ -55,6 +56,16 @@
     "thinking": "Thinking",
     "executing": "Executing"
   },
+  "subagent": {
+    "title": "Дочерние агенты",
+    "status": {
+      "waiting_agent": "Ожидание",
+      "reviewing": "Проверка",
+      "completed": "Завершён",
+      "failed": "Ошибка",
+      "stopped": "Остановлен"
+    }
+  },
   "system": {
     "online": "ИИ в сети",
     "offline": "ИИ не в сети",
@@ -70,6 +81,7 @@
     "kb": "База знаний",
     "network": "Сеть",
     "memory": "Память",
+    "workflows": "Процессы",
     "systemInfo": "Локальные LLM",
     "proxies": "Прокси-серверы",
     "notes": "Долгосрочные заметки",
@@ -142,6 +154,7 @@
     "deleteDialogFiles": "Будут удалены JSONL-история и файловая память сессии. Долгосрочные заметки и тематические памяти не затрагиваются.",
     "deleteDialogConfirm": "Удалить диалог",
     "today": "СЕГОДНЯ",
+    "decodeError": "Не удалось декодировать это сообщение",
     "thinking": "{name} анализирует запрос…",
     "executing": "Выполнение · генерация ответа…",
     "copy": "Копировать",
@@ -185,7 +198,18 @@
     "modeHint": "Выберите режим обработки запроса",
     "modeTitle": "РЕЖИМ ЗАПРОСА",
     "workflowSelect": "Выберите процесс",
-    "mode": { "normal": "Обычный", "plan": "План", "consult": "Консультация", "workflow": "Процесс" }
+    "mode": {
+      "normal": "Обычный",
+      "plan": "План",
+      "consult": "Консультация",
+      "workflow": "Процесс"
+    },
+    "modeDescription": {
+      "normal": "Обычное выполнение запроса",
+      "plan": "Сначала составить план",
+      "consult": "Ответить без изменения файлов",
+      "workflow": "Запустить настроенный процесс"
+    }
   },
   "panel": {
     "ctx": "Контекст сессии",
@@ -369,6 +393,59 @@
     "userInvocable": "Доступен пользователю",
     "disableModelInvocation": "Не добавлять автоматически"
   },
+  "workflow": {
+    "title": "ПРОЦЕССЫ",
+    "new": "Новый процесс",
+    "edit": "Редактирование процесса",
+    "id": "ID процесса",
+    "addStep": "Добавить шаг",
+    "step": "Шаг",
+    "stepId": "ID шага",
+    "stepTitle": "Название шага",
+    "executor": "Исполнитель",
+    "executor_self": "Самостоятельно",
+    "executor_auto": "Автоматически",
+    "executor_agent_id": "Агент",
+    "agentId": "ID агента",
+    "retry": "Лимит повторов",
+    "storage": "Путь хранения",
+    "validation": "Проверка",
+    "acceptance": "Критерии приёмки",
+    "review": "Ревью",
+    "dependencies": "Зависимости",
+    "tools": "Обязательные инструменты",
+    "skills": "Обязательные скиллы",
+    "skillGroups": "Группы скиллов",
+    "substeps": "Подшаги",
+    "substepId": "ID подшага",
+    "add": "Добавить",
+    "refresh": "Обновить",
+    "import": "Импорт YAML",
+    "export": "Экспорт YAML",
+    "copy": "Копировать",
+    "download": "Скачать",
+    "duplicate": "Дублировать",
+    "copySuffix": "копия",
+    "enabled": "Включён",
+    "disabled": "Выключен",
+    "steps": "шагов",
+    "empty": "Процессов пока нет.",
+    "deleteConfirm": "Удалить процесс {name}?",
+    "deleted": "Процесс удалён",
+    "saved": "Процесс {name} сохранён",
+    "imported": "Процесс импортирован",
+    "importError": "Ошибка импорта YAML: {error}",
+    "copied": "YAML скопирован",
+    "exportTitle": "YAML процесса",
+    "saving": "Сохранение…",
+    "savedState": "Сохранено",
+    "unsaved": "Изменения сохранены локально",
+    "validationError": "Заполните выделенные поля",
+    "dependencyOrder": "Шаг нельзя поместить перед его зависимостью",
+    "selectAgent": "Выберите агента",
+    "noDependencies": "Нет предыдущих шагов",
+    "resourcesAtRun": "Ресурсы проверяются по агенту, выбранному при запуске процесса"
+  },
   "systemInfo": {
     "title": "Локальные LLM",
     "subtitle": "Аппаратные ресурсы текущей системы",
@@ -381,7 +458,10 @@
     "installedLlama": "llama.app установлена",
     "updateLlama": "Обновить llama.app",
     "installLlama": "Установить llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Процессор",
     "memory": "Оперативная память",
     "gpu": "Видеокарта",
@@ -404,7 +484,10 @@
       "lb": "Бинарные файлы llama.app",
       "lm": "Модели llama.app"
     },
-    "configure": { "ollama": "Настройка Ollama", "llama": "Настройка llama.app" },
+    "configure": {
+      "ollama": "Настройка Ollama",
+      "llama": "Настройка llama.app"
+    },
     "binaryPath": "Путь к бинарнику",
     "launchArgs": "Ключи запуска через пробел",
     "modelsPath": "Папка моделей",

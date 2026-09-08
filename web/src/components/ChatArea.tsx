@@ -49,11 +49,10 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
         </div>
         <button
           onClick={() => void copy()}
-          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] transition-all ${
-            copied
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-              : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-100"
-          }`}
+          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] transition-all ${copied
+            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+            : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-100"
+            }`}
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
           {copied ? t("chat.copied") : t("chat.copy")}
@@ -451,6 +450,8 @@ function UserMessage({
 
 function ToolMessage({ agent, message }: { agent: LiveAgent; message: ChatMessage }) {
   const { t } = useT();
+  const toolResult = message.toolResult ?? "";
+  const visibleToolResult = toolResult.length > 1000 ? `${toolResult.slice(0, 1000)}...` : toolResult;
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3 pl-12">
       <div className="min-w-0 flex-1">
@@ -484,7 +485,7 @@ function ToolMessage({ agent, message }: { agent: LiveAgent; message: ChatMessag
               <pre
                 className={`max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 font-mono text-[11px] ${message.toolError ? "text-rose-300" : "text-slate-300"}`}
               >
-                {message.toolError ?? message.toolResult ?? ""}
+                {message.toolError ?? visibleToolResult}
               </pre>
             </>
           )}
@@ -539,6 +540,10 @@ type Props = {
   onSwitchAndContinue?: (messageID: string) => void;
   continuingErrorMessageId: string | null;
   onDeleteMessage: (id: string) => void;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  onLoadOlder: () => Promise<void> | void;
+  onLoadNewer: () => Promise<void> | void;
 };
 
 export function ChatArea({
@@ -553,6 +558,10 @@ export function ChatArea({
   onSwitchAndContinue,
   continuingErrorMessageId,
   onDeleteMessage,
+  hasOlder,
+  hasNewer,
+  onLoadOlder,
+  onLoadNewer,
 }: Props) {
   const { t } = useT();
   const [deleteMessageId, setDeleteMessageId] = useState<string | null>(null);
@@ -568,6 +577,9 @@ export function ChatArea({
     }
   };
   const scrollRef = useRef<HTMLDivElement>(null);
+  const loadingPage = useRef(false);
+  const pageDirection = useRef<"older" | "newer" | null>(null);
+  const previousScrollHeight = useRef(0);
   const accent = ACCENTS[agent.accent];
 
   const contentLen = messages.reduce((acc, m) => acc + m.parts.reduce((a, p) => a + p.content.length, 0), 0);
@@ -576,10 +588,31 @@ export function ChatArea({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const isNewMessage = messages.length !== prevLen.current || prevLen.current === 0;
+    const isPageLoad = pageDirection.current !== null;
+    const isNewMessage = !isPageLoad && (messages.length !== prevLen.current || prevLen.current === 0);
     prevLen.current = messages.length;
-    el.scrollTo({ top: el.scrollHeight, behavior: isNewMessage ? "smooth" : "auto" });
-  }, [messages.length, contentLen, busy, agent.id]);
+    if (isPageLoad) {
+      if (pageDirection.current === "older") el.scrollTop += el.scrollHeight - previousScrollHeight.current;
+      pageDirection.current = null;
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: isNewMessage ? "smooth" : "auto" });
+    }
+  }, [messages, contentLen, busy, agent.id]);
+
+  const loadPage = async (direction: "older" | "newer") => {
+    const el = scrollRef.current;
+    if (!el || loadingPage.current) return;
+    if (direction === "older" && (!hasOlder || el.scrollTop > 80)) return;
+    if (direction === "newer" && (!hasNewer || el.scrollHeight - el.scrollTop - el.clientHeight > 80)) return;
+    loadingPage.current = true;
+    pageDirection.current = direction;
+    previousScrollHeight.current = el.scrollHeight;
+    try {
+      await (direction === "older" ? onLoadOlder() : onLoadNewer());
+    } finally {
+      loadingPage.current = false;
+    }
+  };
 
   const streamingId =
     busy && messages.length && messages[messages.length - 1].id !== continuingErrorMessageId
@@ -591,7 +624,15 @@ export function ChatArea({
     (!lastMsg || lastMsg.role === "user" || lastMsg.parts.length === 0 || lastMsg.id === continuingErrorMessageId);
 
   return (
-    <div ref={scrollRef} className="scroll-slim relative z-10 flex-1 overflow-y-auto">
+    <div
+      ref={scrollRef}
+      onScroll={(event) => {
+        const el = event.currentTarget;
+        void loadPage("older");
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) void loadPage("newer");
+      }}
+      className="scroll-slim relative z-10 flex-1 overflow-y-auto"
+    >
       <div className="mx-auto max-w-3xl space-y-6 px-4 py-4 sm:px-6 sm:py-6">
         {!hasWorkspace && (
           <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.08] px-4 py-3 text-center text-sm text-amber-200">
@@ -640,7 +681,11 @@ export function ChatArea({
             </div>
 
             {messages.map((m) =>
-              m.role === "user" ? (
+              m.decodeError ? (
+                <div key={m.id} className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-200">
+                  {t("chat.decodeError")}
+                </div>
+              ) : m.role === "user" ? (
                 <UserMessage
                   key={m.id}
                   message={m}

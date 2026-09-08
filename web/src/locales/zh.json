@@ -25,10 +25,15 @@
     "type": "Type",
     "openMenu": "Open menu",
     "back": "Back to chat",
+    "preview": "预览",
     "previous": "Previous page",
     "next": "Next page"
   },
-  "theme": { "toggle": "切换配色方案", "light": "浅色", "dark": "深色" },
+  "theme": {
+    "toggle": "切换配色方案",
+    "light": "浅色",
+    "dark": "深色"
+  },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -51,6 +56,16 @@
     "thinking": "Thinking",
     "executing": "Executing"
   },
+  "subagent": {
+    "title": "子代理",
+    "status": {
+      "waiting_agent": "等待中",
+      "reviewing": "审核中",
+      "completed": "已完成",
+      "failed": "失败",
+      "stopped": "已停止"
+    }
+  },
   "system": {
     "online": "AI Online",
     "offline": "AI Offline",
@@ -66,6 +81,7 @@
     "kb": "Knowledge Base",
     "network": "Network",
     "memory": "Memory",
+    "workflows": "工作流",
     "systemInfo": "Local LLMs",
     "proxies": "Proxy servers",
     "notes": "Long-term notes",
@@ -115,7 +131,12 @@
   },
   "header": {
     "genParams": "GENERATION PARAMS",
-    "preset": { "strict": "Strict", "reasoned": "Reasoned", "balanced": "Balanced", "creative": "Creative" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Reasoned",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
     "temperature": "Temperature",
     "topP": "Top-P",
     "clearHistory": "Clear history",
@@ -133,6 +154,7 @@
     "deleteDialogFiles": "The JSONL history and session memory file will be removed. Long-term notes and topic memories are kept.",
     "deleteDialogConfirm": "Delete dialog",
     "today": "TODAY",
+    "decodeError": "无法解码此消息",
     "thinking": "{name} is analyzing the request…",
     "executing": "Executing · generating response…",
     "copy": "Copy",
@@ -176,7 +198,18 @@
     "modeHint": "选择请求处理方式",
     "modeTitle": "请求模式",
     "workflowSelect": "选择工作流",
-    "mode": { "normal": "普通", "plan": "计划", "consult": "咨询", "workflow": "工作流" }
+    "mode": {
+      "normal": "普通",
+      "plan": "计划",
+      "consult": "咨询",
+      "workflow": "工作流"
+    },
+    "modeDescription": {
+      "normal": "按通常方式完成请求",
+      "plan": "先制定计划再执行",
+      "consult": "不修改文件，仅提供回答",
+      "workflow": "运行已配置的工作流"
+    }
   },
   "panel": {
     "ctx": "Session context",
@@ -360,6 +393,59 @@
     "userInvocable": "Available to user",
     "disableModelInvocation": "Do not invoke automatically"
   },
+  "workflow": {
+    "title": "WORKFLOWS",
+    "new": "New workflow",
+    "edit": "Edit workflow",
+    "id": "Workflow ID",
+    "addStep": "Add step",
+    "step": "Step",
+    "stepId": "Step ID",
+    "stepTitle": "Step title",
+    "executor": "Executor",
+    "executor_self": "Self",
+    "executor_auto": "Automatic",
+    "executor_agent_id": "Agent",
+    "agentId": "Agent ID",
+    "retry": "Retry limit",
+    "storage": "Storage path",
+    "validation": "Validation",
+    "acceptance": "验收标准",
+    "review": "Review",
+    "dependencies": "Dependencies",
+    "tools": "Required tools",
+    "skills": "Required skills",
+    "skillGroups": "Skill groups",
+    "substeps": "Substeps",
+    "substepId": "Substep ID",
+    "add": "Add",
+    "refresh": "Refresh",
+    "import": "Import YAML",
+    "export": "Export YAML",
+    "copy": "Copy",
+    "download": "Download",
+    "duplicate": "Duplicate",
+    "copySuffix": "copy",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "steps": "steps",
+    "empty": "No workflows yet.",
+    "deleteConfirm": "Delete workflow {name}?",
+    "deleted": "Workflow deleted",
+    "saved": "Workflow {name} saved",
+    "imported": "Workflow imported",
+    "importError": "YAML import failed: {error}",
+    "copied": "YAML copied",
+    "exportTitle": "Workflow YAML",
+    "saving": "正在保存…",
+    "savedState": "已保存",
+    "unsaved": "更改已本地保存",
+    "validationError": "请填写突出显示的字段",
+    "dependencyOrder": "步骤不能排在其依赖项之前",
+    "selectAgent": "选择代理",
+    "noDependencies": "没有可用的前置步骤",
+    "resourcesAtRun": "资源会按运行工作流时选择的代理进行验证"
+  },
   "systemInfo": {
     "title": "Local LLMs",
     "subtitle": "Hardware resources of the current system",
@@ -372,7 +458,10 @@
     "installedLlama": "llama.app installed",
     "updateLlama": "Update llama.app",
     "installLlama": "Install llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Processor",
     "memory": "System memory",
     "gpu": "Graphics card",
@@ -395,7 +484,10 @@
       "lb": "llama.app binaries",
       "lm": "llama.app models"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Binary path",
     "launchArgs": "Launch arguments separated by spaces",
     "modelsPath": "Models folder",

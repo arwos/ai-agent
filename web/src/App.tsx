@@ -1,13 +1,22 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Brain,
+  BookOpen,
+  Boxes,
   CheckCircle2,
+  Cpu,
   Download,
   Eraser,
   FolderOpen,
+  Globe,
   Hexagon,
   Info,
   MessageSquare,
+  Network,
+  ServerCog,
+  SlidersHorizontal,
+  Sparkles,
   Upload,
   XCircle,
 } from "lucide-react";
@@ -32,10 +41,13 @@ import {
   WS_EVENT_CONVERSATION_GET,
   WS_EVENT_CONVERSATION_RUN_STATUS,
   WS_EVENT_SETTINGS_CLEANUP,
+	continueWorkflow,
   listWorkflows,
+	pauseWorkflow,
+	stopWorkflow,
   wsRequest,
 } from "./lib/api";
-import type { AgentRequest, BgTask, Db, GoalState, Workflow } from "./lib/api";
+import type { AgentRequest, BgTask, ChildRunFrame, ChildRunStatus, Db, GoalState, Workflow } from "./lib/api";
 import { I18nProvider, useT } from "./lib/i18n";
 import type { TVars } from "./lib/i18n";
 import { Sidebar } from "./components/Sidebar";
@@ -67,6 +79,9 @@ const MemoryScreen = lazy(() =>
 const SystemInfoScreen = lazy(() =>
   import("./components/settings/SystemInfoScreen").then((m) => ({ default: m.SystemInfoScreen })),
 );
+const WorkflowsScreen = lazy(() =>
+  import("./components/settings/WorkflowsScreen").then((m) => ({ default: m.WorkflowsScreen })),
+);
 
 type Toast = { id: string; kind: "ok" | "err" | "info"; msg: string };
 const transferCategories = [
@@ -93,6 +108,7 @@ const views: View[] = [
   "kb",
   "network",
   "memory",
+  "workflows",
   "systemInfo",
 ];
 type SettingsTab = Exclude<View, "chat" | "settings">;
@@ -166,6 +182,8 @@ function isExactToolCallText(message: ChatMessage | undefined, toolName: string)
   }
 }
 
+const HISTORY_PAGE_SIZE = 20;
+
 // A tool event can arrive while conversation.get is restoring history after a
 // reconnect. Keep any live-only message that is not represented in the JSONL
 // snapshot instead of replacing the whole chat with an older snapshot.
@@ -220,6 +238,7 @@ function Shell() {
   const [goalCollapsed, setGoalCollapsed] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [bgTasks, setBgTasks] = useState<BgTask[]>([]);
+  const [childRuns, setChildRuns] = useState<Record<string, ChildRunFrame[]>>({});
 
   useEffect(() => {
     const configureTextInputs = (root: ParentNode) => {
@@ -387,7 +406,7 @@ function Shell() {
 
   const loadConvs = useCallback(async (wsId: string) => {
     const metas = await wsRequest<(Omit<Conversation, "messages"> & { count?: number })[]>(41, { workspaceId: wsId });
-    const full = (await Promise.all(metas.map((m) => wsRequest<Conversation | null>(42, { id: m.id })))).filter(
+    const full = (await Promise.all(metas.map((m) => wsRequest<Conversation | null>(42, { id: m.id, limit: HISTORY_PAGE_SIZE })))).filter(
       (x): x is Conversation => x !== null,
     );
     setConvs(full);
@@ -446,6 +465,22 @@ function Shell() {
       setConnectionStatus(fr.status === "connected" ? "connected" : "disconnected");
       return;
     }
+    if (fr.type === "subagent") {
+      const dialogId = String(fr.convId ?? "");
+      const childDialogId = String(fr.child_dialog_id ?? "");
+      if (!dialogId || !childDialogId) return;
+      const next: ChildRunFrame = {
+        dialogId,
+        childDialogId,
+        taskId: String(fr.task_id ?? ""),
+        status: (fr.status === "success" ? "completed" : fr.status) as ChildRunStatus,
+      };
+      setChildRuns((items) => ({
+        ...items,
+        [dialogId]: [...(items[dialogId] ?? []).filter((item) => item.childDialogId !== childDialogId), next],
+      }));
+      return;
+    }
     switch (fr.type) {
       case "status":
         setAgentStatus((s) => ({ ...s, [fr.agentId as string]: fr.status as AgentStatus }));
@@ -499,19 +534,19 @@ function Shell() {
             c.id !== fr.convId
               ? c
               : {
-                  ...c,
-                  messages: [
-                    ...c.messages,
-                    {
-                      id: uid(),
-                      role: "agent",
-                      time: nowTime(),
-                      parts: [],
-                      model: String(fr.model ?? ""),
-                      provider: String(fr.provider ?? ""),
-                    } as ChatMessage,
-                  ],
-                },
+                ...c,
+                messages: [
+                  ...c.messages,
+                  {
+                    id: uid(),
+                    role: "agent",
+                    time: nowTime(),
+                    parts: [],
+                    model: String(fr.model ?? ""),
+                    provider: String(fr.provider ?? ""),
+                  } as ChatMessage,
+                ],
+              },
           ),
         );
         break;
@@ -562,12 +597,12 @@ function Shell() {
               messages: messages.map((m, i) =>
                 i === agentIndex
                   ? {
-                      ...m,
-                      parts: [
-                        ...m.parts,
-                        { type: "code" as const, content: fr.code as string, lang: fr.lang as string },
-                      ],
-                    }
+                    ...m,
+                    parts: [
+                      ...m.parts,
+                      { type: "code" as const, content: fr.code as string, lang: fr.lang as string },
+                    ],
+                  }
                   : m,
               ),
             };
@@ -589,11 +624,11 @@ function Shell() {
           setGoal((g) =>
             g
               ? {
-                  ...g,
-                  tasks: g.tasks.map((tk) =>
-                    tk.id === fr.taskId ? { ...tk, status: fr.status as GoalState["tasks"][number]["status"] } : tk,
-                  ),
-                }
+                ...g,
+                tasks: g.tasks.map((tk) =>
+                  tk.id === fr.taskId ? { ...tk, status: fr.status as GoalState["tasks"][number]["status"] } : tk,
+                ),
+              }
               : g,
           );
         break;
@@ -722,18 +757,20 @@ function Shell() {
     setGoalCollapsed(false);
     setGoals([]);
     setBgTasks([]);
+    setChildRuns({});
     const sock = connectChat(activeConvId, activeAgentId, onFrame);
     sockRef.current = sock;
     let disposed = false;
     let syncTimer: number | undefined;
-    const syncRunningConversation = async () => {
+    const syncRunningConversation = async (includeHistory: boolean) => {
       try {
-        const [conversation, state] = await Promise.all([
-          wsRequest<Conversation | null>(WS_EVENT_CONVERSATION_GET, { id: activeConvId }),
-          wsRequest<{ running: boolean; request?: AgentRequest }>(WS_EVENT_CONVERSATION_RUN_STATUS, {
-            id: activeConvId,
-          }),
-        ]);
+        const statePromise = wsRequest<{ running: boolean; request?: AgentRequest }>(WS_EVENT_CONVERSATION_RUN_STATUS, {
+          id: activeConvId,
+        });
+        const conversationPromise = includeHistory
+          ? wsRequest<Conversation | null>(WS_EVENT_CONVERSATION_GET, { id: activeConvId, limit: HISTORY_PAGE_SIZE })
+          : Promise.resolve(null);
+        const [conversation, state] = await Promise.all([conversationPromise, statePromise]);
         if (disposed) return;
         if (conversation) {
           setConvs((items) =>
@@ -760,8 +797,8 @@ function Shell() {
         // state and retry on the next poll rather than hiding active work.
       }
     };
-    void syncRunningConversation().then(() => {
-      if (!disposed) syncTimer = window.setInterval(() => void syncRunningConversation(), 1000);
+    void syncRunningConversation(true).then(() => {
+      if (!disposed) syncTimer = window.setInterval(() => void syncRunningConversation(false), 1000);
     });
     return () => {
       disposed = true;
@@ -779,6 +816,25 @@ function Shell() {
     await wsRequest(110, { id: activeConvId, messageId });
     setConvs((cs) =>
       cs.map((c) => (c.id === activeConvId ? { ...c, messages: c.messages.filter((m) => m.id !== messageId) } : c)),
+    );
+  };
+
+  const loadHistoryPage = async (direction: "older" | "newer") => {
+    const conversation = convs.find((item) => item.id === activeConvId);
+    if (!conversation) return;
+    const cursor = direction === "older" ? conversation.olderId : conversation.newerId;
+    if (!cursor) return;
+    const page = await wsRequest<Conversation>(WS_EVENT_CONVERSATION_GET, {
+      id: conversation.id,
+      ...(direction === "older" ? { beforeId: cursor } : { afterId: cursor }),
+      limit: HISTORY_PAGE_SIZE,
+    });
+    setConvs((items) =>
+      items.map((item) => {
+        if (item.id !== conversation.id) return item;
+        const merged = direction === "older" ? [...page.messages, ...item.messages] : [...item.messages, ...page.messages];
+        return { ...item, ...page, messages: direction === "older" ? merged.slice(0, HISTORY_PAGE_SIZE) : merged.slice(-HISTORY_PAGE_SIZE) };
+      }),
     );
   };
 
@@ -857,11 +913,11 @@ function Shell() {
         conversation.id !== activeConvId
           ? conversation
           : {
-              ...conversation,
-              messages: conversation.messages.map((message) =>
-                message.id === errorMessageId ? { ...message, retryableError: false } : message,
-              ),
-            },
+            ...conversation,
+            messages: conversation.messages.map((message) =>
+              message.id === errorMessageId ? { ...message, retryableError: false } : message,
+            ),
+          },
       ),
     );
     setContinuingErrorMessageId(errorMessageId);
@@ -885,12 +941,12 @@ function Shell() {
         conversation.id !== activeConvId
           ? conversation
           : {
-              ...conversation,
-              messages: conversation.messages.map((message) =>
-                message.id === errorMessageId ? { ...message, retryableError: false } : message,
-              ),
-              activeModel: next,
-            },
+            ...conversation,
+            messages: conversation.messages.map((message) =>
+              message.id === errorMessageId ? { ...message, retryableError: false } : message,
+            ),
+            activeModel: next,
+          },
       ),
     );
     setContinuingErrorMessageId(errorMessageId);
@@ -912,6 +968,10 @@ function Shell() {
 
   const resumeGoal = () => {
     if (!activeConvId || busy) return;
+	if (goal?.workflowId) {
+		void continueWorkflow(activeConvId).catch((error) => notify("err", error instanceof Error ? error.message : String(error)));
+		return;
+	}
     setBusy(true);
     sockRef.current?.send({
       type: "user.continue",
@@ -922,6 +982,11 @@ function Shell() {
   };
   const setGoalLifecycle = (action: "goal.pause" | "goal.stop") => {
     if (!activeConvId) return;
+	if (goal?.workflowId) {
+		const request = action === "goal.pause" ? pauseWorkflow : stopWorkflow;
+		void request(activeConvId).catch((error) => notify("err", error instanceof Error ? error.message : String(error)));
+		return;
+	}
     sockRef.current?.send({ type: action, convId: activeConvId });
     // A lifecycle action closes the floating card immediately. The persisted
     // goal remains visible in the sidebar and can be opened again there.
@@ -1164,21 +1229,21 @@ function Shell() {
         cs.map((c) =>
           c.id === convId
             ? {
-                ...c,
-                memory: { title: res.title, summary: res.summary, topics: res.topics ?? [] },
-                messages: [
-                  ...c.messages,
-                  {
-                    id: uid(),
-                    role: "agent" as const,
-                    time: nowTime(),
-                    compact: true,
-                    contextSize: res.after,
-                    tokens: res.tokens,
-                    parts: [{ type: "text" as const, content: res.summary }],
-                  },
-                ],
-              }
+              ...c,
+              memory: { title: res.title, summary: res.summary, topics: res.topics ?? [] },
+              messages: [
+                ...c.messages,
+                {
+                  id: uid(),
+                  role: "agent" as const,
+                  time: nowTime(),
+                  compact: true,
+                  contextSize: res.after,
+                  tokens: res.tokens,
+                  parts: [{ type: "text" as const, content: res.summary }],
+                },
+              ],
+            }
             : c,
         ),
       );
@@ -1230,22 +1295,22 @@ function Shell() {
 
   const activeAgent = agents.find((a) => a.id === activeAgentId) ??
     agents[0] ?? {
-      id: "empty-agent",
-      name: "Agent",
-      description: "",
-      icon: SKILL_ICONS.bot,
-      accent: "indigo" as AccentKey,
-      model: "",
-      mainModels: [],
-      compactionModel: "",
-      compactionLevel: "balanced",
-      memoryModel: "",
-      systemPrompt: "",
-      skillGroupIds: [],
-      mcpIds: [],
-      topics: [],
-      status: "idle" as AgentStatus,
-    };
+    id: "empty-agent",
+    name: "Agent",
+    description: "",
+    icon: SKILL_ICONS.bot,
+    accent: "indigo" as AccentKey,
+    model: "",
+    mainModels: [],
+    compactionModel: "",
+    compactionLevel: "balanced",
+    memoryModel: "",
+    systemPrompt: "",
+    skillGroupIds: [],
+    mcpIds: [],
+    topics: [],
+    status: "idle" as AgentStatus,
+  };
   const activeConv = convs.find((c) => c.id === activeConvId) ?? null;
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
   const activeModel = activeConv?.activeModel || pendingModel || activeAgent.model;
@@ -1396,6 +1461,7 @@ function Shell() {
           kb: db.kbDocs.length,
           network: db.proxies.length,
           memory: db.longTermNotes.length + db.topicMemories.length,
+          workflows: workflows.length,
         }}
         agentStatus={agentStatus}
         onWorkspace={(id) => void switchWorkspace(id)}
@@ -1511,11 +1577,11 @@ function Shell() {
               setDb((current) =>
                 current
                   ? {
-                      ...current,
-                      agents: current.agents.map((item) =>
-                        item.id === activeAgentId ? { ...item, systemPrompt: value } : item,
-                      ),
-                    }
+                    ...current,
+                    agents: current.agents.map((item) =>
+                      item.id === activeAgentId ? { ...item, systemPrompt: value } : item,
+                    ),
+                  }
                   : current,
               ),
             );
@@ -1560,9 +1626,8 @@ function Shell() {
                 <button
                   key={k}
                   onClick={() => setTab(k)}
-                  className={`relative flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-[12.5px] font-medium transition-colors ${
-                    tab === k ? "text-slate-100" : "text-slate-500 hover:text-slate-300"
-                  }`}
+                  className={`relative flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-[12.5px] font-medium transition-colors ${tab === k ? "text-slate-100" : "text-slate-500 hover:text-slate-300"
+                    }`}
                 >
                   <Icon size={14} className={tab === k ? "text-indigo-300" : ""} />
                   {label}
@@ -1596,6 +1661,10 @@ function Shell() {
                     onSwitchAndContinue={switchAndContinueConversation}
                     continuingErrorMessageId={continuingErrorMessageId}
                     onDeleteMessage={deleteMessage}
+                    hasOlder={Boolean(activeConv?.hasOlder)}
+                    hasNewer={Boolean(activeConv?.hasNewer)}
+                    onLoadOlder={() => void loadHistoryPage("older")}
+                    onLoadNewer={() => void loadHistoryPage("newer")}
                   />
                   <InputBar
                     agent={activeDisplayAgent}
@@ -1625,6 +1694,8 @@ function Shell() {
                         <GoalPlate
                           goal={(goalPopup ?? goal)!}
                           accentRgb={accentRgb}
+                          childRuns={childRuns[(goalPopup ?? goal)!.dialogId] ?? []}
+                          onOpenChild={(id) => openConversation(id)}
                           onResume={resumeGoal}
                           onPause={() => setGoalLifecycle("goal.pause")}
                           onStop={() => setGoalLifecycle("goal.stop")}
@@ -1640,100 +1711,136 @@ function Shell() {
             </div>
           </>
         ) : (
-          <div className="scroll-slim relative z-10 min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+          <div className="relative z-10 flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="scroll-slim min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+              {view === "settings" && (
+                <>
+                  <input
+                    ref={importSettingsRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      try {
+                        const content = await file.text();
+                        const data = JSON.parse(content) as Record<string, unknown>;
+                        const available = transferCategories.filter((key) => key in data);
+                        setTransferAvailable(available);
+                        setTransferSelection(Object.fromEntries(transferCategories.map((key) => [key, false])));
+                        setTransferContent(content);
+                        setTransferMode("import");
+                      } catch (error) {
+                        notify("err", error instanceof Error ? error.message : String(error));
+                      }
+                    }}
+                  />
+                </>
+              )}
+              <Suspense
+                fallback={
+                  <div className="grid min-h-48 place-items-center font-mono text-xs text-slate-500">
+                    {t("common.loading")}
+                  </div>
+                }
+              >
+                {(view === "skills" || (view === "settings" && settingsTab === "skills")) && (
+                  <SkillsScreen profileId={activeProfileId} patch={patch} notify={notify} />
+                )}
+                {(view === "providers" || (view === "settings" && settingsTab === "providers")) && (
+                  <ProvidersScreen providers={db.providers} proxies={db.proxies} patch={patch} notify={notify} />
+                )}
+                {(view === "mcp" || (view === "settings" && settingsTab === "mcp")) && (
+                  <McpScreen servers={db.mcpServers} patch={patch} notify={notify} />
+                )}
+                {(view === "agents" || (view === "settings" && settingsTab === "agents")) && (
+                  <AgentsScreen
+                    agents={agents}
+                    providers={db.providers}
+                    groups={db.skillGroups}
+                    mcpServers={db.mcpServers}
+                    patch={patch}
+                    notify={notify}
+                  />
+                )}
+                {(view === "presets" || (view === "settings" && settingsTab === "presets")) && (
+                  <PresetsScreen presets={db.presets} agents={agents} patch={patch} notify={notify} />
+                )}
+                {(view === "kb" || (view === "settings" && settingsTab === "kb")) && (
+                  <KbScreen docs={db.kbDocs} quotaBytes={db.kbQuotaBytes} patch={patch} notify={notify} />
+                )}
+                {(view === "network" || (view === "settings" && settingsTab === "network")) && (
+                  <NetworkScreen proxies={db.proxies} patch={patch} notify={notify} />
+                )}
+                {(view === "memory" || (view === "settings" && settingsTab === "memory")) && (
+                  <MemoryScreen notes={db.longTermNotes} topics={db.topicMemories} patch={patch} notify={notify} />
+                )}
+                {(view === "workflows" || (view === "settings" && settingsTab === "workflows")) && (
+                  <WorkflowsScreen
+                    notify={notify}
+                    onChange={setWorkflows}
+                    profileId={activeProfileId}
+                    agents={db.agents}
+                    skills={db.skills}
+                    skillGroups={db.skillGroups}
+                    mcpServers={db.mcpServers}
+                  />
+                )}
+                {(view === "systemInfo" || (view === "settings" && settingsTab === "systemInfo")) && <SystemInfoScreen />}
+              </Suspense>
+            </div>
             {view === "settings" && (
-              <>
-                <input
-                  ref={importSettingsRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (!file) return;
-                    try {
-                      const content = await file.text();
-                      const data = JSON.parse(content) as Record<string, unknown>;
-                      const available = transferCategories.filter((key) => key in data);
-                      setTransferAvailable(available);
-                      setTransferSelection(Object.fromEntries(transferCategories.map((key) => [key, false])));
-                      setTransferContent(content);
-                      setTransferMode("import");
-                    } catch (error) {
-                      notify("err", error instanceof Error ? error.message : String(error));
-                    }
-                  }}
-                />
-                <div className="mx-auto mb-6 flex max-w-6xl flex-wrap gap-2 border-b border-white/[0.08] pb-3">
-                  {(
-                    [
-                      "agents",
-                      "providers",
-                      "mcp",
-                      "presets",
-                      "skills",
-                      "kb",
-                      "memory",
-                      "network",
-                      "systemInfo",
-                    ] as SettingsTab[]
-                  ).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => {
-                        setSettingsTab(tab);
-                        writeHash("settings", null, tab);
-                        void refreshSection(tab);
-                      }}
-                      className={`rounded-lg px-3 py-2 text-xs transition-colors ${settingsTab === tab ? "bg-indigo-400/15 text-indigo-200" : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"}`}
-                    >
-                      {t(`nav.${tab}`)}
-                    </button>
-                  ))}
-                </div>
-              </>
+              <aside className="scroll-slim max-h-72 w-full shrink-0 overflow-y-auto border-t border-white/[0.06] bg-abyss-850/35 px-3 py-5 lg:max-h-none lg:w-60 lg:border-l lg:border-t-0">
+                {([
+                  {
+                    title: "settings",
+                    tabs: [
+                      { key: "agents", icon: Cpu },
+                      { key: "providers", icon: Boxes },
+                      { key: "systemInfo", icon: ServerCog },
+                      { key: "presets", icon: SlidersHorizontal },
+                      { key: "workflows", icon: Network },
+                    ],
+                  },
+                  { title: "mcp", tabs: [{ key: "mcp", icon: Network }, { key: "network", icon: Globe }] },
+                  {
+                    title: "kb",
+                    tabs: [
+                      { key: "skills", icon: Sparkles },
+                      { key: "kb", icon: BookOpen },
+                      { key: "memory", icon: Brain },
+                    ],
+                  },
+                ] as {
+                  title: SettingsTab | "settings";
+                  tabs: { key: SettingsTab; icon: typeof Brain }[];
+                }[]).map((group) => (
+                  <div key={group.title} className="mb-5 last:mb-0">
+                    <p className="mb-2 px-2 font-mono text-[9px] uppercase tracking-[0.22em] text-slate-600">
+                      {t(`nav.${group.title}`)}
+                    </p>
+                    <div className="space-y-1">
+                      {group.tabs.map(({ key: tab, icon: Icon }) => (
+                        <button
+                          key={tab}
+                          onClick={() => {
+                            setSettingsTab(tab);
+                            writeHash("settings", null, tab);
+                            void refreshSection(tab);
+                          }}
+                          className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-xs transition-colors ${settingsTab === tab ? "bg-indigo-400/15 text-indigo-200" : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"}`}
+                        >
+                          <Icon size={14} className="mr-2.5 shrink-0" />
+                          {t(`nav.${tab}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </aside>
             )}
-            <Suspense
-              fallback={
-                <div className="grid min-h-48 place-items-center font-mono text-xs text-slate-500">
-                  {t("common.loading")}
-                </div>
-              }
-            >
-              {(view === "skills" || (view === "settings" && settingsTab === "skills")) && (
-                <SkillsScreen profileId={activeProfileId} patch={patch} notify={notify} />
-              )}
-              {(view === "providers" || (view === "settings" && settingsTab === "providers")) && (
-                <ProvidersScreen providers={db.providers} proxies={db.proxies} patch={patch} notify={notify} />
-              )}
-              {(view === "mcp" || (view === "settings" && settingsTab === "mcp")) && (
-                <McpScreen servers={db.mcpServers} patch={patch} notify={notify} />
-              )}
-              {(view === "agents" || (view === "settings" && settingsTab === "agents")) && (
-                <AgentsScreen
-                  agents={agents}
-                  providers={db.providers}
-                  groups={db.skillGroups}
-                  mcpServers={db.mcpServers}
-                  patch={patch}
-                  notify={notify}
-                />
-              )}
-              {(view === "presets" || (view === "settings" && settingsTab === "presets")) && (
-                <PresetsScreen presets={db.presets} agents={agents} patch={patch} notify={notify} />
-              )}
-              {(view === "kb" || (view === "settings" && settingsTab === "kb")) && (
-                <KbScreen docs={db.kbDocs} quotaBytes={db.kbQuotaBytes} patch={patch} notify={notify} />
-              )}
-              {(view === "network" || (view === "settings" && settingsTab === "network")) && (
-                <NetworkScreen proxies={db.proxies} patch={patch} notify={notify} />
-              )}
-              {(view === "memory" || (view === "settings" && settingsTab === "memory")) && (
-                <MemoryScreen notes={db.longTermNotes} topics={db.topicMemories} patch={patch} notify={notify} />
-              )}
-              {(view === "systemInfo" || (view === "settings" && settingsTab === "systemInfo")) && <SystemInfoScreen />}
-            </Suspense>
           </div>
         )}
       </div>
@@ -1906,7 +2013,7 @@ function Shell() {
       </AnimatePresence>
 
       {/* toasts */}
-      <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-2">
+      <div className="pointer-events-none fixed bottom-5 right-5 z-110 flex flex-col items-end gap-2">
         <AnimatePresence>
           {toasts.map((toast) => (
             <motion.div
@@ -1915,13 +2022,12 @@ function Shell() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, x: 40 }}
               transition={{ duration: 0.2 }}
-              className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[12px] shadow-2xl backdrop-blur-xl ${
-                toast.kind === "ok"
-                  ? "border-emerald-400/25 bg-emerald-950/85 text-emerald-200"
-                  : toast.kind === "err"
-                    ? "border-rose-400/25 bg-rose-950/85 text-rose-200"
-                    : "border-white/10 bg-abyss-800/90 text-slate-200"
-              }`}
+              className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[12px] shadow-2xl backdrop-blur-xl ${toast.kind === "ok"
+                ? "border-emerald-400/25 bg-emerald-950/85 text-emerald-200"
+                : toast.kind === "err"
+                  ? "border-rose-400/25 bg-rose-950/85 text-rose-200"
+                  : "border-white/10 bg-abyss-800/90 text-slate-200"
+                }`}
             >
               {toast.kind === "ok" ? (
                 <CheckCircle2 size={14} />

@@ -86,9 +86,9 @@ The application is assembled through goppy dependency injection. Technical servi
 
 ### Agent modes and workflow execution
 
-Modes are request-scoped: `normal` uses the selected agent's configured scope; `plan` creates an approval-gated goal plan; `consult` exposes only the fixed read-only workspace/Git allowlist; and `workflow` validates a profile-scoped YAML definition, snapshots its version and hash, expands its strict ordered steps into goal tasks, and waits for approval. Workflow steps execute serially. Substeps are included in the parent task prompt and do not become independent scheduler records. Declared order, output contracts, storage boundaries, capability requirements, and retry limits are strict.
+Modes are request-scoped: `normal` uses the selected agent's configured scope; `plan` creates an approval-gated goal plan; `consult` exposes only the fixed read-only workspace/Git allowlist; and `workflow` validates and snapshots a profile-scoped YAML definition before a system scheduler runs it. Each step has one Builder child and one fresh, consult-mode Reviewer child; the next step starts only after a reviewer `pass`. Substeps remain a Builder checklist, not scheduler records.
 
-Workflow advancement is backend-gated by the persisted current task. A task cannot be skipped, duplicated, started out of order, or run in parallel. A failed task exposes its bounded status/error envelope to the main model, which decides whether to review, delegate elsewhere, or retry within `max_attempts`; the backend does not perform hidden retries.
+Workflow advancement is backend-gated by the persisted current task. A task cannot be skipped, duplicated, started out of order, or run in parallel. Reviewer `fail` feedback is persisted and passed to the next Builder attempt; the scheduler retries within `max_attempts`, then marks the workflow failed. The main model does not advance workflow tasks.
 
 ### Parent and child agents
 

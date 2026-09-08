@@ -115,9 +115,9 @@ Modes are selected per message and are not stored on the agent profile:
 - `normal` is the default unrestricted conversation mode. `asGoal` remains a compatibility input for the existing goal lifecycle when no explicit mode is supplied.
 - `plan` creates a detailed goal plan, waits for user approval, and executes only after approval. A pre-approval delegated child is read-only.
 - `consult` investigates and answers without write or destructive operations. Its only workspace/Git tools are `fs.list_dir`, `fs.read_file`, `fs.file_info`, `fs.grep`, `git.status`, `git.diff`, and `git.log`; MCP and other tools are excluded.
-- `workflow` runs a selected, profile-scoped YAML definition. The definition fixes step order, inputs, outputs, storage, validation, capabilities, delegation policy, and retry limits. The main model expands it into a goal plan, but no execution or side effect occurs before approval.
+- `workflow` runs a selected, profile-scoped YAML definition through a system scheduler. Each step has a concrete Builder agent, acceptance criteria, constrained capabilities, and retry limit; an isolated Reviewer must accept the result before the next step starts. No execution or side effect occurs before approval.
 
-Goals remain the runtime state for a request. Workflow steps are copied into the goal as an immutable run snapshot; descriptive substeps are instructions within a step, not separate tasks. Workflow failures are returned to the main model for review, alternate delegation, or a bounded retry. There is no hidden automatic retry.
+Goals remain the runtime state for a request. Workflow steps are copied into the goal as an immutable run snapshot; descriptive substeps are instructions within a step, not separate tasks. A rejected review automatically retries the Builder within its configured limit; after that limit the workflow stops.
 
 Delegated agents run in separate persisted child conversations linked to the parent. A child cannot delegate again and must return its result through the `agent.result` callback. The callback uses a one-time run token and is checked against the profile, parent, child, task, and completion state. Pending parent and child state survives service restart; a pending child is reconstructed from its immutable snapshot, and duplicate or late callbacks are rejected.
 

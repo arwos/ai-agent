@@ -25,6 +25,7 @@
     "type": "Type",
     "openMenu": "Open menu",
     "back": "Back to chat",
+    "preview": "Preview",
     "previous": "Previous page",
     "next": "Next page"
   },
@@ -55,6 +56,16 @@
     "thinking": "Thinking",
     "executing": "Executing"
   },
+  "subagent": {
+    "title": "Child agents",
+    "status": {
+      "waiting_agent": "Waiting",
+      "reviewing": "Reviewing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "stopped": "Stopped"
+    }
+  },
   "system": {
     "online": "AI Online",
     "offline": "AI Offline",
@@ -70,6 +81,7 @@
     "kb": "Knowledge Base",
     "network": "Network",
     "memory": "Memory",
+    "workflows": "Workflows",
     "systemInfo": "Local LLMs",
     "proxies": "Proxy servers",
     "notes": "Long-term notes",
@@ -119,7 +131,12 @@
   },
   "header": {
     "genParams": "GENERATION PARAMS",
-    "preset": { "strict": "Strict", "reasoned": "Reasoned", "balanced": "Balanced", "creative": "Creative" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Reasoned",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
     "temperature": "Temperature",
     "topP": "Top-P",
     "clearHistory": "Clear history",
@@ -137,6 +154,7 @@
     "deleteDialogFiles": "The JSONL history and session memory file will be removed. Long-term notes and topic memories are kept.",
     "deleteDialogConfirm": "Delete dialog",
     "today": "TODAY",
+    "decodeError": "Failed to decode this message",
     "thinking": "{name} is analyzing the request…",
     "executing": "Executing · generating response…",
     "copy": "Copy",
@@ -180,7 +198,18 @@
     "modeHint": "Choose how this request should be handled",
     "modeTitle": "REQUEST MODE",
     "workflowSelect": "Select workflow",
-    "mode": { "normal": "Normal", "plan": "Plan", "consult": "Consult", "workflow": "Workflow" }
+    "mode": {
+      "normal": "Normal",
+      "plan": "Plan",
+      "consult": "Consult",
+      "workflow": "Workflow"
+    },
+    "modeDescription": {
+      "normal": "Complete the request normally",
+      "plan": "Create a plan before acting",
+      "consult": "Answer without changing files",
+      "workflow": "Run a configured workflow"
+    }
   },
   "panel": {
     "ctx": "Session context",
@@ -364,6 +393,59 @@
     "userInvocable": "Available to user",
     "disableModelInvocation": "Do not invoke automatically"
   },
+  "workflow": {
+    "title": "WORKFLOWS",
+    "new": "New workflow",
+    "edit": "Edit workflow",
+    "id": "Workflow ID",
+    "addStep": "Add step",
+    "step": "Step",
+    "stepId": "Step ID",
+    "stepTitle": "Step title",
+    "executor": "Executor",
+    "executor_self": "Self",
+    "executor_auto": "Automatic",
+    "executor_agent_id": "Agent",
+    "agentId": "Agent ID",
+    "retry": "Retry limit",
+    "storage": "Storage path",
+    "validation": "Validation",
+    "acceptance": "Acceptance criteria",
+    "review": "Review",
+    "dependencies": "Dependencies",
+    "tools": "Required tools",
+    "skills": "Required skills",
+    "skillGroups": "Skill groups",
+    "substeps": "Substeps",
+    "substepId": "Substep ID",
+    "add": "Add",
+    "refresh": "Refresh",
+    "import": "Import YAML",
+    "export": "Export YAML",
+    "copy": "Copy",
+    "download": "Download",
+    "duplicate": "Duplicate",
+    "copySuffix": "copy",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "steps": "steps",
+    "empty": "No workflows yet.",
+    "deleteConfirm": "Delete workflow {name}?",
+    "deleted": "Workflow deleted",
+    "saved": "Workflow {name} saved",
+    "imported": "Workflow imported",
+    "importError": "YAML import failed: {error}",
+    "copied": "YAML copied",
+    "exportTitle": "Workflow YAML",
+    "saving": "Saving…",
+    "savedState": "Saved",
+    "unsaved": "Changes are saved locally",
+    "validationError": "Complete the highlighted fields",
+    "dependencyOrder": "A step cannot be placed before one of its dependencies",
+    "selectAgent": "Select an agent",
+    "noDependencies": "No earlier steps are available",
+    "resourcesAtRun": "Resources are checked against the agent selected when the workflow runs"
+  },
   "systemInfo": {
     "title": "Local LLMs",
     "subtitle": "Hardware resources of the current system",
@@ -376,7 +458,10 @@
     "installedLlama": "llama.app installed",
     "updateLlama": "Update llama.app",
     "installLlama": "Install llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Processor",
     "memory": "System memory",
     "gpu": "Graphics card",
@@ -399,7 +484,10 @@
       "lb": "llama.app binaries",
       "lm": "llama.app models"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Binary path",
     "launchArgs": "Launch arguments separated by spaces",
     "modelsPath": "Models folder",

@@ -33,3 +33,7 @@ agent:
 
 local_llm:
     folder: ./datasource/llm
+
+vectordb:
+    folder: ./datasource/vectordb
+    addr: 127.0.0.1:6334

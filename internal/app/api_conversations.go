@@ -56,7 +56,10 @@ func (a *App) conversationList(ev event.Event, _ ws.Meta) error {
 }
 func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 	var q struct {
-		ID string `json:"id"`
+		ID       string `json:"id"`
+		BeforeID string `json:"beforeId"`
+		AfterID  string `json:"afterId"`
+		Limit    int    `json:"limit"`
 	}
 	if err := ev.Decode(&q); err != nil {
 		return err
@@ -72,10 +75,11 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 	if err != nil {
 		return err
 	}
-	history, err := a.dialogs.History(dialog.SessionKey(profile, item.ID), 0)
+	historyPage, err := a.dialogs.HistoryPage(dialog.SessionKey(profile, item.ID), q.BeforeID, q.AfterID, q.Limit)
 	if err != nil {
 		return err
 	}
+	history := historyPage.Messages
 	memory, err := a.memory.Get(profile, item.WorkspaceID, item.ID)
 	if err != nil {
 		return err
@@ -99,6 +103,10 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 		if message.Role == "error_resolution" || (message.Error && resolvedErrors[message.ID]) {
 			continue
 		}
+		if message.DecodeError {
+			messages = append(messages, map[string]any{"id": message.ID, "role": "agent", "time": time.Now().UTC().Format(time.RFC3339), "decodeError": true, "parts": []map[string]string{{"type": "text", "content": ""}}})
+			continue
+		}
 		role := "agent"
 		if message.Role == "user" {
 			role = "user"
@@ -114,7 +122,7 @@ func (a *App) conversationGet(ev event.Event, _ ws.Meta) error {
 		}
 		messages = append(messages, map[string]any{"id": messageID, "role": role, "time": message.Timestamp.Format(time.RFC3339), "compact": message.Compact, "contextSize": message.ContextSize, "tokens": message.Tokens, "model": message.Model, "provider": message.Provider, "retryableError": message.Error, "parts": []map[string]string{{"type": "text", "content": message.Content}}})
 	}
-	return ev.Encode(map[string]any{"id": item.ID, "workspaceId": item.WorkspaceID, "agentId": item.AgentID, "title": item.Title, "updatedAt": item.UpdatedAt, "activeModel": item.ActiveModel, "messages": messages, "memory": memory, "goal": goal, "goals": goals})
+	return ev.Encode(map[string]any{"id": item.ID, "workspaceId": item.WorkspaceID, "agentId": item.AgentID, "title": item.Title, "updatedAt": item.UpdatedAt, "activeModel": item.ActiveModel, "messages": messages, "hasOlder": historyPage.HasOlder, "hasNewer": historyPage.HasNewer, "olderId": historyPage.OlderID, "newerId": historyPage.NewerID, "memory": memory, "goal": goal, "goals": goals})
 }
 func (a *App) conversationMemory(ev event.Event, meta ws.Meta) error {
 	var q struct {

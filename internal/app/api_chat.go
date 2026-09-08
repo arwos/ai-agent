@@ -26,6 +26,7 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/models"
 	"github.com/arwos/ai-agent/internal/pkg/prompts"
 	"github.com/arwos/ai-agent/internal/pkg/toolexecutor"
+	"github.com/arwos/ai-agent/internal/pkg/workflow"
 )
 
 type chatSendQuery struct {
@@ -103,6 +104,7 @@ func defaultGoal(dialogID, request string) *goal.Goal {
 		ID:       dialog.NewMessageID(),
 		DialogID: dialogID,
 		Goal:     title,
+		Request:  request,
 		Status:   "running",
 		Tasks:    []goal.GoalTask{{ID: dialog.NewMessageID(), Label: title, Status: "pending"}},
 	}
@@ -410,6 +412,49 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			}
 		}
 	}
+	// A Builder receives only the resources declared by its immutable task
+	// snapshot. The scheduler, rather than the Builder model, owns everything
+	// else in the workflow.
+	if child, ok := a.childRun(publicDialogID); ok && child.Role == childRoleBuilder {
+		parentGoal, goalErr := a.dialogs.Goal(dialog.SessionKey(profileID, child.ParentDialogID))
+		if goalErr != nil || parentGoal == nil {
+			return fmt.Errorf("load workflow child goal: %w", goalErr)
+		}
+		var task *goal.GoalTask
+		for index := range parentGoal.Tasks {
+			if parentGoal.Tasks[index].ID == child.TaskID {
+				task = &parentGoal.Tasks[index]
+				break
+			}
+		}
+		if task == nil {
+			return fmt.Errorf("workflow child task not found")
+		}
+		allowed := make(map[string]bool, len(task.Tools))
+		for _, name := range task.Tools {
+			allowed[name] = true
+		}
+		filterTools := extraTools[:0]
+		for _, tool := range extraTools {
+			if allowed[tool.Name] {
+				filterTools = append(filterTools, tool)
+			}
+		}
+		extraTools = filterTools
+		for name := range mcpBindings {
+			if !allowed[name] {
+				delete(mcpBindings, name)
+			}
+		}
+		for alias, target := range builtinAliases {
+			if !allowed[alias] && !allowed[target] {
+				delete(builtinAliases, alias)
+				delete(builtinAllowed, target)
+			}
+		}
+		q.Skills = append([]string(nil), task.Skills...)
+		mentionedSkills = nil
+	}
 	system += prompts.Mode(q.Mode)
 	if q.Mode == "workflow" {
 		if a.workflows == nil {
@@ -422,11 +467,6 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		if !definition.Enabled {
 			return fmt.Errorf("workflow %q is disabled", q.WorkflowID)
 		}
-		encoded, marshalErr := json.Marshal(definition)
-		if marshalErr != nil {
-			return fmt.Errorf("encode workflow: %w", marshalErr)
-		}
-		system += "\nSelected workflow definition (follow its fixed order and contracts):\n" + string(encoded) + "\n"
 	}
 	if builtins, builtinErr := a.builtinMCP(profileID); builtinErr == nil {
 		selected := make(map[string]bool, len(selectedMCPIDs))
@@ -471,6 +511,34 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			}
 		}
 	}
+	if child, ok := a.childRun(publicDialogID); ok && child.Role == childRoleBuilder {
+		parentGoal, goalErr := a.dialogs.Goal(dialog.SessionKey(profileID, child.ParentDialogID))
+		if goalErr != nil || parentGoal == nil {
+			return fmt.Errorf("load workflow child goal: %w", goalErr)
+		}
+		allowed := map[string]bool{}
+		for _, task := range parentGoal.Tasks {
+			if task.ID == child.TaskID {
+				for _, name := range task.Tools {
+					allowed[name] = true
+				}
+				break
+			}
+		}
+		filtered := extraTools[:0]
+		for _, tool := range extraTools {
+			if allowed[tool.Name] {
+				filtered = append(filtered, tool)
+			}
+		}
+		extraTools = filtered
+		for alias, target := range builtinAliases {
+			if !allowed[alias] && !allowed[target] {
+				delete(builtinAliases, alias)
+				delete(builtinAllowed, target)
+			}
+		}
+	}
 	if workspaceAccess {
 		system += prompts.WorkspaceAccess
 		gitBranch := ""
@@ -478,6 +546,25 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			gitBranch = strings.TrimPrefix(strings.TrimSpace(head), "ref: refs/heads/")
 		}
 		system += prompts.Environment(q.WorkspaceID, workspaceService.Path, runtime.GOOS+"/"+runtime.GOARCH, time.Now().UTC().Format("2006-01-02"), gitBranch)
+	}
+	if child, ok := a.childRun(publicDialogID); ok {
+		if child.Role == childRoleReviewer {
+			extraTools = append(extraTools, toolexecutor.Tool{Name: "workflow.review_result", Description: "Submit the independent workflow review verdict."})
+		} else {
+			extraTools = append(extraTools, toolexecutor.Tool{Name: "agent.result", Description: "Submit the canonical result to the parent agent."})
+		}
+	} else {
+		extraTools = append(extraTools,
+			toolexecutor.Tool{Name: "agent.list", Description: "List available profile agents without secret configuration."},
+			toolexecutor.Tool{Name: "agent.run", Description: "Delegate one bounded task to a profile-scoped agent."},
+		)
+	}
+	if q.Mode != "consult" {
+		extraTools = append(extraTools,
+			toolexecutor.Tool{Name: "artifact.create", Description: "Create an immutable artifact snapshot from a workspace file."},
+			toolexecutor.Tool{Name: "artifact.get", Description: "Inspect immutable artifact metadata."},
+			toolexecutor.Tool{Name: "artifact.read", Description: "Read an immutable artifact snapshot."},
+		)
 	}
 	if a.tools != nil {
 		system += a.tools.Prompt(extraTools)
@@ -535,6 +622,55 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	var provider llm.Provider = llm.New(profileProvider.Kind, profileProvider.BaseURL, apiKey, model, a.providerProxy(profileID, profileProvider.ProxyID), llm.WithRPM(profileProvider.ID, profileProvider.RPM))
 	activeRateLimitKey, activeRPM := profileProvider.ID, profileProvider.RPM
 	activeGoal := resumedGoal
+	if q.Mode == "workflow" && !q.Resume {
+		definition, workflowErr := a.workflows.Get(profileID, q.WorkflowID)
+		if workflowErr != nil {
+			return fmt.Errorf("load workflow snapshot: %w", workflowErr)
+		}
+		if q.AgentID == "" {
+			return fmt.Errorf("reviewer agent is required for workflow mode")
+		}
+		agents, agentsErr := a.store.Agents(profileID)
+		if agentsErr != nil {
+			return fmt.Errorf("load workflow agents: %w", agentsErr)
+		}
+		if !containsAgent(agents, q.AgentID) {
+			return fmt.Errorf("reviewer agent %q not found", q.AgentID)
+		}
+		for _, step := range definition.Steps {
+			if !containsAgent(agents, step.AgentID) {
+				return fmt.Errorf("builder agent %q for workflow step %q not found", step.AgentID, step.ID)
+			}
+		}
+		workflowHash, hashErr := workflow.Hash(definition)
+		if hashErr != nil {
+			return fmt.Errorf("hash workflow snapshot: %w", hashErr)
+		}
+		snapshot, marshalErr := json.Marshal(definition)
+		if marshalErr != nil {
+			return fmt.Errorf("encode workflow snapshot: %w", marshalErr)
+		}
+		activeGoal = defaultGoal(publicDialogID, q.Content)
+		activeGoal.WorkflowID, activeGoal.WorkflowVersion, activeGoal.WorkflowHash = definition.ID, definition.Version, workflowHash
+		activeGoal.Status = "awaiting_approval"
+		activeGoal.Tasks = make([]goal.GoalTask, 0, len(definition.Steps))
+		workflowGroups, groupsErr := a.skills.Groups(profileID)
+		if groupsErr != nil {
+			return fmt.Errorf("load workflow skill groups: %w", groupsErr)
+		}
+		for _, step := range definition.Steps {
+			skillIDs := make([]string, 0)
+			for _, groupID := range step.RequiredSkills {
+				for _, group := range workflowGroups {
+					if group.ID == groupID {
+						skillIDs = append(skillIDs, group.SkillIDs...)
+						break
+					}
+				}
+			}
+			activeGoal.Tasks = append(activeGoal.Tasks, goal.GoalTask{ID: dialog.NewMessageID(), Label: step.Title, Tools: append([]string(nil), step.RequiredTools...), Skills: skillIDs, DependsOn: append([]string(nil), step.Dependencies...), WorkflowStepID: step.ID, WorkflowSnapshot: append([]byte(nil), snapshot...), ExecutorAgentID: step.AgentID, ReviewerAgentID: q.AgentID, Acceptance: step.Acceptance, MaxAttempts: step.Retry.MaxAttempts, Status: "pending"})
+		}
+	}
 	publishGoal := func(goal *goal.Goal) {
 		if a.publish != nil && goal != nil {
 			a.publish(StreamMessage{Type: "goal", Payload: map[string]any{"dialog_id": publicDialogID, "goal": goal}})
@@ -547,6 +683,8 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 	if q.Mode == "plan" && !q.Resume {
 		activeGoal, planningUsage = goalPlan(ctx, provider, publicDialogID, q.Content, extraTools)
 		activeGoal.Status = "awaiting_approval"
+	}
+	if (q.Mode == "plan" || q.Mode == "workflow") && !q.Resume {
 		if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
 			return fmt.Errorf("save dialog goal: %w", saveErr)
 		}
@@ -577,6 +715,12 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			return saveErr
 		}
 	}
+	if q.Mode == "workflow" && activeGoal != nil {
+		if q.AgentID == "" {
+			return fmt.Errorf("reviewer agent is required for workflow mode")
+		}
+		return a.scheduleWorkflow(ctx, profileID, publicDialogID, q.WorkspaceID, activeGoal)
+	}
 	if activeGoal != nil {
 		tasks := make([]string, 0, len(activeGoal.Tasks))
 		for index, task := range activeGoal.Tasks {
@@ -584,7 +728,7 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 		}
 		system += prompts.GoalExecution(activeGoal.Goal, tasks)
 	}
-	engine := a.engines.Acquire(provider, appToolExecutor{registry: a.tools, scope: toolexecutor.Scope{WorkspaceID: q.WorkspaceID, ProfileID: profileID, DialogID: q.DialogID, MCPTools: mcpBindings, Aliases: builtinAliases, Allowed: builtinAllowed, Mode: q.Mode, MCPCall: a.callMCPTool, Request: func(ctx context.Context, args map[string]any) (any, error) {
+	engine := a.engines.Acquire(provider, appToolExecutor{registry: a.tools, scope: toolexecutor.Scope{WorkspaceID: q.WorkspaceID, ProfileID: profileID, DialogID: q.DialogID, MCPTools: mcpBindings, Aliases: builtinAliases, Allowed: builtinAllowed, Mode: q.Mode, MCPCall: a.callMCPTool, Scoped: a.agentTools(profileID, publicDialogID, publicDialogID, q.WorkspaceID, q.Mode), Request: func(ctx context.Context, args map[string]any) (any, error) {
 		return a.requestUser(ctx, connectionID, publicDialogID, args)
 	}}}, a.dialogs, system)
 	engine.Model = model
@@ -611,48 +755,58 @@ func (a *App) runChatSend(q chatSendQuery, ctx context.Context, connectionID str
 			}
 		}
 		if result == "" && x == nil && activeGoal != nil {
-			started := false
-			for index := range activeGoal.Tasks {
-				task := &activeGoal.Tasks[index]
-				if task.Status != "pending" || (len(task.Tools) > 0 && !containsString(task.Tools, name)) {
-					continue
+			if q.Mode != "workflow" {
+				started := false
+				for index := range activeGoal.Tasks {
+					task := &activeGoal.Tasks[index]
+					if task.Status != "pending" || (len(task.Tools) > 0 && !containsString(task.Tools, name)) {
+						continue
+					}
+					task.Status = "running"
+					// Planned tasks may have been created from the model's technical
+					// tool name. Replace it with the registered human-readable purpose
+					// whenever the tool actually starts, including goals restored from
+					// an older history.
+					task.Label = toolLabel
+					task.Attempts++
+					task.LastTool = name
+					task.Arguments = cloneToolArguments(args)
+					task.Error = ""
+					task.StartedAt = time.Now().UTC()
+					started = true
+					break
 				}
-				task.Status = "running"
-				// Planned tasks may have been created from the model's technical
-				// tool name. Replace it with the registered human-readable purpose
-				// whenever the tool actually starts, including goals restored from
-				// an older history.
-				task.Label = toolLabel
-				task.Attempts++
-				task.LastTool = name
-				task.Arguments = cloneToolArguments(args)
-				task.Error = ""
-				task.StartedAt = time.Now().UTC()
-				started = true
-				break
-			}
-			if !started {
-				activeGoal.Tasks = append(activeGoal.Tasks, goal.GoalTask{ID: dialog.NewMessageID(), Label: toolLabel, Tools: []string{name}, Attempts: 1, MaxAttempts: 3, Status: "running", StartedAt: time.Now().UTC()})
-			}
-			if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
-				logx.Error("failed to save dialog goal", "dialog_id", publicDialogID, "err", saveErr)
-			} else {
-				publishGoal(activeGoal)
+				if !started {
+					activeGoal.Tasks = append(activeGoal.Tasks, goal.GoalTask{ID: dialog.NewMessageID(), Label: toolLabel, Tools: []string{name}, Attempts: 1, MaxAttempts: 3, Status: "running", StartedAt: time.Now().UTC()})
+				}
+				if saveErr := a.dialogs.SaveGoal(q.DialogID, *activeGoal); saveErr != nil {
+					logx.Error("failed to save dialog goal", "dialog_id", publicDialogID, "err", saveErr)
+				} else {
+					publishGoal(activeGoal)
+				}
 			}
 		} else if activeGoal != nil {
 			for index := len(activeGoal.Tasks) - 1; index >= 0; index-- {
 				task := &activeGoal.Tasks[index]
-				if task.Status != "running" {
+				if task.Status != "running" || (q.Mode == "workflow" && task.LastTool != name) {
 					continue
 				}
 				if x != nil {
-					task.Status = "failed"
-					task.Error = x.Error()
-					if task.MaxAttempts > task.Attempts {
-						task.Status = "pending"
+					if q.Mode == "workflow" {
+						_ = goal.CompleteWorkflowTask(activeGoal, task.ID, "", "", x)
+					} else {
+						task.Status = "failed"
+						task.Error = x.Error()
+						if task.MaxAttempts > task.Attempts {
+							task.Status = "pending"
+						}
 					}
 				} else {
-					task.Status = "done"
+					if q.Mode == "workflow" {
+						_ = goal.CompleteWorkflowTask(activeGoal, task.ID, "", result, nil)
+					} else {
+						task.Status = "done"
+					}
 				}
 				task.LastResult = truncateGoalResult(result)
 				task.FinishedAt = time.Now().UTC()

@@ -25,10 +25,15 @@
     "type": "Type",
     "openMenu": "Ouvrir le menu",
     "back": "Retour au chat",
+    "preview": "Aperçu",
     "previous": "Page précédente",
     "next": "Page suivante"
   },
-  "theme": { "toggle": "Changer le thème", "light": "Clair", "dark": "Sombre" },
+  "theme": {
+    "toggle": "Changer le thème",
+    "light": "Clair",
+    "dark": "Sombre"
+  },
   "memory": {
     "title": "MÉMOIRE",
     "notes": "Notes à long terme",
@@ -51,6 +56,16 @@
     "thinking": "Réflexion",
     "executing": "Exécution"
   },
+  "subagent": {
+    "title": "Agents enfants",
+    "status": {
+      "waiting_agent": "En attente",
+      "reviewing": "Vérification",
+      "completed": "Terminé",
+      "failed": "Échec",
+      "stopped": "Arrêté"
+    }
+  },
   "system": {
     "online": "IA en ligne",
     "offline": "IA hors ligne",
@@ -66,6 +81,7 @@
     "kb": "Base de connaissances",
     "network": "Réseau",
     "memory": "Mémoire",
+    "workflows": "Processus",
     "systemInfo": "LLM locaux",
     "proxies": "Serveurs proxy",
     "notes": "Notes à long terme",
@@ -115,7 +131,12 @@
   },
   "header": {
     "genParams": "PARAMÈTRES DE GÉNÉRATION",
-    "preset": { "strict": "Strict", "reasoned": "Raisonné", "balanced": "Équilibré", "creative": "Créatif" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Raisonné",
+      "balanced": "Équilibré",
+      "creative": "Créatif"
+    },
     "temperature": "Température",
     "topP": "Top-P",
     "clearHistory": "Effacer l’historique",
@@ -133,6 +154,7 @@
     "deleteDialogFiles": "L’historique JSONL et le fichier de mémoire de session seront supprimés. Les notes à long terme et les mémoires thématiques sont conservées.",
     "deleteDialogConfirm": "Supprimer le dialogue",
     "today": "AUJOURD’HUI",
+    "decodeError": "Impossible de décoder ce message",
     "thinking": "{name} is analyzing the request…",
     "executing": "Exécution · génération de la réponse…",
     "copy": "Copier",
@@ -176,7 +198,18 @@
     "modeHint": "Choisir le mode de traitement",
     "modeTitle": "MODE DE DEMANDE",
     "workflowSelect": "Choisir un processus",
-    "mode": { "normal": "Normal", "plan": "Plan", "consult": "Consultation", "workflow": "Processus" }
+    "mode": {
+      "normal": "Normal",
+      "plan": "Plan",
+      "consult": "Consultation",
+      "workflow": "Processus"
+    },
+    "modeDescription": {
+      "normal": "Traiter la demande normalement",
+      "plan": "Créer un plan avant d'agir",
+      "consult": "Répondre sans modifier les fichiers",
+      "workflow": "Exécuter un processus configuré"
+    }
   },
   "panel": {
     "ctx": "Contexte de session",
@@ -360,6 +393,59 @@
     "userInvocable": "Disponible pour l’utilisateur",
     "disableModelInvocation": "Ne pas invoquer automatiquement"
   },
+  "workflow": {
+    "title": "PROCESSUS",
+    "new": "Nouveau processus",
+    "edit": "Modifier le processus",
+    "id": "ID du processus",
+    "addStep": "Ajouter une étape",
+    "step": "Étape",
+    "stepId": "ID de l’étape",
+    "stepTitle": "Titre de l’étape",
+    "executor": "Exécuteur",
+    "executor_self": "Soi-même",
+    "executor_auto": "Automatique",
+    "executor_agent_id": "Agent",
+    "agentId": "ID de l’agent",
+    "retry": "Limite de reprises",
+    "storage": "Chemin de stockage",
+    "validation": "Validation",
+    "acceptance": "Critères d’acceptation",
+    "review": "Revue",
+    "dependencies": "Dépendances",
+    "tools": "Outils requis",
+    "skills": "Compétences requises",
+    "skillGroups": "Groupes de compétences",
+    "substeps": "Sous-étapes",
+    "substepId": "ID de la sous-étape",
+    "add": "Ajouter",
+    "refresh": "Actualiser",
+    "import": "Importer YAML",
+    "export": "Exporter YAML",
+    "copy": "Copier",
+    "download": "Télécharger",
+    "duplicate": "Dupliquer",
+    "copySuffix": "copie",
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "steps": "étapes",
+    "empty": "Aucun processus.",
+    "deleteConfirm": "Supprimer le processus {name} ?",
+    "deleted": "Processus supprimé",
+    "saved": "Processus {name} enregistré",
+    "imported": "Processus importé",
+    "importError": "Échec de l’import YAML : {error}",
+    "copied": "YAML copié",
+    "exportTitle": "YAML du processus",
+    "saving": "Enregistrement…",
+    "savedState": "Enregistré",
+    "unsaved": "Les modifications sont enregistrées localement",
+    "validationError": "Complétez les champs en surbrillance",
+    "dependencyOrder": "Une étape ne peut pas précéder une de ses dépendances",
+    "selectAgent": "Sélectionnez un agent",
+    "noDependencies": "Aucune étape précédente disponible",
+    "resourcesAtRun": "Les ressources sont vérifiées avec l’agent choisi au lancement du processus"
+  },
   "systemInfo": {
     "title": "LLM locaux",
     "subtitle": "Ressources matérielles du système actuel",
@@ -372,7 +458,10 @@
     "installedLlama": "llama.app installé",
     "updateLlama": "Mettre à jour llama.app",
     "installLlama": "Installer llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Processeur",
     "memory": "Mémoire système",
     "gpu": "Carte graphique",
@@ -395,7 +484,10 @@
       "lb": "Binaires llama.app",
       "lm": "Modèles llama.app"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Chemin du binaire",
     "launchArgs": "Arguments de lancement séparés par des espaces",
     "modelsPath": "Dossier des modèles",

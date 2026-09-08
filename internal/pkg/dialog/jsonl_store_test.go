@@ -1,6 +1,9 @@
 package dialog
 
 import (
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,6 +32,50 @@ func TestConcurrentAppendAndHistoryLimit(t *testing.T) {
 	limited, e := s.History("chat", 3)
 	if e != nil || len(limited) != 3 {
 		t.Fatalf("len=%d err=%v", len(limited), e)
+	}
+}
+
+func TestHistoryPageForEmptyDialog(t *testing.T) {
+	s := &Store{Root: filepath.Join(t.TempDir(), "dialogs")}
+	page, err := s.HistoryPage(SessionKey("profile", "empty"), "", "", 20)
+	if err != nil || len(page.Messages) != 0 || page.HasOlder || page.HasNewer {
+		t.Fatalf("page=%#v err=%v", page, err)
+	}
+}
+
+func TestHistoryIndexAndPage(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "dialogs")
+	s := &Store{Root: root}
+	id := SessionKey("profile", "session")
+	for i := 0; i < 6; i++ {
+		if err := s.Append(id, Message{ID: fmt.Sprintf("message-%d", i), Role: "user", Content: fmt.Sprintf("message %d", i), Tokens: i + 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := s.HistoryPage(id, "", "", 2)
+	if err != nil || len(page.Messages) != 2 || page.Messages[0].ID != "message-4" || !page.HasOlder {
+		t.Fatalf("page=%#v err=%v", page, err)
+	}
+	previous, err := s.HistoryPage(id, page.OlderID, "", 2)
+	if err != nil || len(previous.Messages) != 2 || previous.Messages[0].ID != "message-2" {
+		t.Fatalf("previous=%#v err=%v", previous, err)
+	}
+	indexBytes, err := os.ReadFile(s.historyIndexPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(indexBytes) != 6*int(historyIndexEntrySize) {
+		t.Fatalf("index size=%d", len(indexBytes))
+	}
+	firstStart := int64(binary.LittleEndian.Uint64(indexBytes[16:24]))
+	firstEnd := int64(binary.LittleEndian.Uint64(indexBytes[24:32]))
+	if firstStart != 0 || firstEnd <= firstStart {
+		t.Fatalf("first offsets=%d..%d", firstStart, firstEnd)
+	}
+	metaBytes, err := os.ReadFile(s.historyMetaPath(id))
+	var meta historyMeta
+	if err != nil || json.Unmarshal(metaBytes, &meta) != nil || meta.TotalTokens != 21 || meta.FileSize != meta.TotalBytes {
+		t.Fatalf("meta=%#v err=%v", meta, err)
 	}
 }
 

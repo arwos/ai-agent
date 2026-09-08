@@ -36,7 +36,7 @@ import {
 import { fmtSize } from "../lib/data";
 import type { LiveAgent, Preset, SkillGroup, WorkspaceFile } from "../lib/data";
 import { wsRequest } from "../lib/api";
-import type { AgentRequest, BgTask, GoalState, Workflow } from "../lib/api";
+import type { AgentRequest, BgTask, ChildRunFrame, ChildRunStatus, GoalState, Workflow } from "../lib/api";
 import { useT } from "../lib/i18n";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -523,6 +523,7 @@ export function InputBar({
 
   const canSend = (text.trim().length > 0 || files.length > 0) && !busy;
   const visiblePresets = presets.filter((p) => !p.agentId || p.agentId === agent.id);
+  const selectedWorkflow = workflows.find((workflow) => workflow.id === workflowId);
 
   return (
     <div className="relative z-20 shrink-0 border-t border-white/[0.06] bg-abyss-900/75 px-4 pb-4 pt-3 backdrop-blur-xl sm:px-6">
@@ -662,15 +663,15 @@ export function InputBar({
           <div className="relative shrink-0">
             <button type="button" onClick={() => { setModesOpen((value) => !value); setPresetsOpen(false); setSkillsOpen(false); setModelsOpen(false); }} className={`flex h-7 items-center gap-1 rounded-md px-2 text-[10px] transition-colors ${mode !== "normal" ? "bg-cyan-400/[0.12] text-cyan-200" : "text-slate-500 hover:bg-white/5 hover:text-slate-100"}`} title={t("input.modeHint")} aria-expanded={modesOpen}>
               <Layers size={12} className={mode !== "normal" ? "text-cyan-300" : ""} />
-              <span>{t(`input.mode.${mode}`)}</span><ChevronDown size={10} />
+              <span className="max-w-[180px] truncate">{t(`input.mode.${mode}`)}{selectedWorkflow && mode === "workflow" ? ` · ${selectedWorkflow.name}` : ""}</span><ChevronDown size={10} />
             </button>
             <AnimatePresence>
               {modesOpen && <>
                 <div className="fixed inset-0 z-20" onClick={() => setModesOpen(false)} />
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-full left-0 z-30 mb-2 w-56 rounded-xl border border-white/10 bg-abyss-850/98 p-2 shadow-2xl backdrop-blur-2xl">
                   <p className="px-3 pb-1.5 pt-1 font-mono text-[9px] tracking-[0.24em] text-slate-600">{t("input.modeTitle")}</p>
-                  {(["normal", "plan", "consult", "workflow"] as AgentMode[]).map((option) => <button key={option} type="button" onClick={() => { setMode(option); setModesOpen(false); if (option !== "workflow") setWorkflowId(""); }} className={`block w-full rounded-lg px-3 py-2 text-left text-[11px] ${mode === option ? "bg-cyan-400/[0.1] text-cyan-200" : "text-slate-300 hover:bg-white/[0.05]"}`}>{t(`input.mode.${option}`)}</button>)}
-                  {mode === "workflow" && <select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-abyss-900 px-2 py-1.5 text-[10px] text-slate-300" aria-label={t("input.workflowSelect")}>
+                  {(["normal", "plan", "consult", "workflow"] as AgentMode[]).map((option) => <button key={option} type="button" onClick={() => { setMode(option); setModesOpen(option === "workflow"); if (option !== "workflow") setWorkflowId(""); }} className={`block w-full rounded-lg px-3 py-2 text-left ${mode === option ? "bg-cyan-400/[0.1] text-cyan-200" : "text-slate-300 hover:bg-white/[0.05]"}`}><div className="text-[11px]">{t(`input.mode.${option}`)}</div><div className="mt-0.5 text-[10px] leading-4 text-slate-500">{t(`input.modeDescription.${option}`)}</div></button>)}
+                  {mode === "workflow" && <select value={workflowId} onChange={(event) => { setWorkflowId(event.target.value); setModesOpen(false); }} className="mt-1 w-full rounded-lg border border-white/10 bg-abyss-900 px-2 py-1.5 text-[10px] text-slate-300" aria-label={t("input.workflowSelect")}>
                     <option value="">{t("input.workflowSelect")}</option>{workflows.filter((workflow) => workflow.enabled).map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
                   </select>}
                 </motion.div>
@@ -783,8 +784,7 @@ export function InputBar({
                 disabled={busy ? disabled : !canSend || disabled}
                 aria-label={busy ? t("input.stop") : t("input.send")}
                 title={busy ? t("input.stop") : t("input.send")}
-                className={`relative grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br text-white transition-all duration-300 ${
-                  busy
+                className={`relative grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br text-white transition-all duration-300 ${busy
                     ? "from-rose-500 to-orange-500"
                     : agent.accent === "cyan"
                       ? "from-cyan-500 to-teal-500"
@@ -795,7 +795,7 @@ export function InputBar({
                           : agent.accent === "amber"
                             ? "from-amber-500 to-orange-500"
                             : "from-indigo-500 to-violet-500"
-                } ${busy || canSend ? "hover:brightness-125" : "cursor-not-allowed opacity-30 saturate-50"}`}
+                  } ${busy || canSend ? "hover:brightness-125" : "cursor-not-allowed opacity-30 saturate-50"}`}
                 style={
                   busy || canSend
                     ? { boxShadow: `0 0 24px -4px rgba(${busy ? "251,113,133" : accentRgb},0.65)` }
@@ -995,9 +995,8 @@ export function AgentRequestModal({
                         if (req.kind === "choice") setChoice(o.id);
                         else setMulti((m) => (m.includes(o.id) ? m.filter((x) => x !== o.id) : [...m, o.id]));
                       }}
-                      className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all ${
-                        on ? "border-violet-400/40 bg-violet-400/[0.1]" : "border-white/[0.07] hover:bg-white/[0.04]"
-                      }`}
+                      className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all ${on ? "border-violet-400/40 bg-violet-400/[0.1]" : "border-white/[0.07] hover:bg-white/[0.04]"
+                        }`}
                     >
                       <span
                         className={`grid h-4 w-4 shrink-0 place-items-center ${req.kind === "multichoice" ? "rounded" : "rounded-full"} border ${on ? "border-violet-300 bg-violet-400/90 text-abyss-950" : "border-slate-600"}`}
@@ -1061,6 +1060,8 @@ export function AgentRequestModal({
 export function GoalPlate({
   goal,
   accentRgb,
+  childRuns,
+  onOpenChild,
   onResume,
   onPause,
   onStop,
@@ -1068,12 +1069,15 @@ export function GoalPlate({
 }: {
   goal: GoalState;
   accentRgb: string;
+  childRuns?: ChildRunFrame[];
+  onOpenChild?: (dialogId: string) => void;
   onResume?: () => void;
   onPause?: () => void;
   onStop?: () => void;
   onClose?: () => void;
 }) {
   const { t } = useT();
+  const [childrenOpen, setChildrenOpen] = useState(false);
   const readableTask = (label: string) =>
     (
       ({
@@ -1165,7 +1169,8 @@ export function GoalPlate({
         </div>
         <div className="space-y-1">
           {goal.tasks.map((task) => (
-            <div key={task.id} className="flex items-center gap-2">
+            <div key={task.id}>
+            <div className="flex items-center gap-2">
               {task.status === "done" ? (
                 <Check size={12} className="shrink-0 text-emerald-400" />
               ) : task.status === "failed" ? (
@@ -1182,12 +1187,52 @@ export function GoalPlate({
               >
                 {readableTask(task.label)}
               </span>
+              {task.status === "reviewing" && <span className="ml-auto font-mono text-[9px] text-violet-300">review</span>}
+            </div>
+            {(task.reviewVerdict || task.reviewFeedback) && <div className="ml-5 mb-1 rounded border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[9px] leading-relaxed text-slate-400"><span className={task.reviewVerdict === "pass" ? "text-emerald-300" : "text-rose-300"}>{task.reviewVerdict?.toUpperCase()}</span>{task.reviewSummary && ` · ${task.reviewSummary}`}{task.reviewFeedback && <div className="mt-0.5 text-rose-200/80">{task.reviewFeedback}</div>}</div>}
             </div>
           ))}
         </div>
+        {childRuns && childRuns.length > 0 && (
+          <div className="mt-3 border-t border-white/[0.07] pt-2">
+            <button
+              type="button"
+              onClick={() => setChildrenOpen((open) => !open)}
+              className="flex w-full items-center gap-1.5 text-left font-mono text-[9px] tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300"
+            >
+              {childrenOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {t("subagent.title")} · {childRuns.length}
+            </button>
+            {childrenOpen && (
+              <div className="mt-1.5 space-y-1">
+                {childRuns.map((child) => (
+                  <button
+                    key={child.childDialogId}
+                    type="button"
+                    onClick={() => onOpenChild?.(child.childDialogId)}
+                    className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white/[0.05]"
+                    title={child.childDialogId}
+                  >
+                    <span className="min-w-0 truncate font-mono text-[10px] text-slate-400">{child.taskId}</span>
+                    <span className={`shrink-0 text-[10px] ${childStatusColor(child.status)}`}>
+                      {t(`subagent.status.${child.status}`)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );
+}
+
+function childStatusColor(status: ChildRunStatus): string {
+  if (status === "completed") return "text-emerald-300";
+  if (status === "failed" || status === "stopped") return "text-rose-300";
+  if (status === "reviewing") return "text-amber-300";
+  return "text-cyan-300";
 }
 
 export function BgPlate({ tasks, accentRgb }: { tasks: BgTask[]; accentRgb: string }) {

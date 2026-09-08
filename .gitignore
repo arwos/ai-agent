@@ -6,6 +6,7 @@ vendor/
 build/
 .idea/
 .vscode/
+.goals/
 
 coverage.txt
 coverage.out
@@ -27,5 +28,7 @@ datasource/memory/
 datasource/dialogs/
 datasource/db/
 datasource/llm/
+datasource/workflow/
+datasource/vectordb/
 
 *.db-journal

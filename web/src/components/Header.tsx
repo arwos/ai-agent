@@ -33,6 +33,7 @@ export const SETTINGS_META: Record<Exclude<View, "chat">, { icon: LucideIcon; rg
   kb: { icon: BookOpen, rgb: "244,114,182" },
   network: { icon: Network, rgb: "96,165,250" },
   memory: { icon: Brain, rgb: "244,114,182" },
+  workflows: { icon: Boxes, rgb: "34,211,238" },
   systemInfo: { icon: Cpu, rgb: "34,211,238" },
 };
 const GENERATION_PRESETS = [

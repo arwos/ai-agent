@@ -74,3 +74,6 @@ pre-commit: install license lint tests web-test build
 .PHONY: ci
 ci:
 	@echo "Temporarily disabled"
+
+vectordb:
+	docker run -p 6333:6333 -p 6334:6334 -v ./datasource/vectordb:/qdrant/storage qdrant/qdrant

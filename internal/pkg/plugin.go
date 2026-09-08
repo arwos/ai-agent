@@ -22,6 +22,7 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/systeminfo"
 	"github.com/arwos/ai-agent/internal/pkg/toolexecutor"
 	"github.com/arwos/ai-agent/internal/pkg/updater"
+	"github.com/arwos/ai-agent/internal/pkg/vectordb"
 	"github.com/arwos/ai-agent/internal/pkg/workflow"
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
@@ -47,4 +48,5 @@ var Plugins = plugin.Inject(
 	func(info *systeminfo.Service) *ollama.Service { return ollama.New(info.Root()) },
 	systeminfo.WithPlugin(),
 	agent.WithPlugin(),
+	vectordb.WithPlugin(),
 )

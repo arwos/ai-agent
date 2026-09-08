@@ -42,6 +42,7 @@ type Props = {
     kb: number;
     network: number;
     memory: number;
+    workflows: number;
   };
   agentStatus: Record<string, AgentStatus>;
   onWorkspace: (id: string) => void;

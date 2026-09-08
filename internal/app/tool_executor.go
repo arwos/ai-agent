@@ -15,11 +15,17 @@ import (
 type appToolExecutor struct {
 	registry *toolexecutor.Registry
 	scope    toolexecutor.Scope
+	before   func(string, map[string]any) error
 }
 
 func (e appToolExecutor) Execute(ctx context.Context, name string, args map[string]any) (string, error) {
 	if e.registry == nil {
 		return "", fmt.Errorf("tool registry is unavailable")
+	}
+	if e.before != nil {
+		if err := e.before(name, args); err != nil {
+			return "", err
+		}
 	}
 	return e.registry.Execute(ctx, e.scope, name, args)
 }

@@ -62,6 +62,7 @@ export function SModal({
   footer,
   w = "max-w-lg",
   layer = 50,
+  sticky = false,
 }: {
   title: string;
   subtitle?: string;
@@ -70,6 +71,7 @@ export function SModal({
   footer?: ReactNode;
   w?: string;
   layer?: number;
+  sticky?: boolean;
 }) {
   const { t } = useT();
   return createPortal(
@@ -83,8 +85,8 @@ export function SModal({
           boxShadow: "0 30px 80px -20px rgba(0,0,0,0.85)",
         }}
       >
-        <div className="scroll-slim max-h-[84vh] overflow-y-auto rounded-[11px] bg-abyss-850 p-5">
-          <div className="mb-4 flex items-start gap-3">
+        <div className={`rounded-[11px] bg-abyss-850 ${sticky ? "flex max-h-[84vh] flex-col overflow-hidden" : "scroll-slim max-h-[84vh] overflow-y-auto p-5"}`}>
+          <div className={`flex items-start gap-3 ${sticky ? "shrink-0 border-b border-white/[0.06] px-5 py-4" : "mb-4"}`}>
             <div className="flex-1">
               <p className="font-display text-[15px] font-semibold text-slate-100">{title}</p>
               {subtitle && <p className="mt-0.5 font-mono text-[9.5px] tracking-[0.18em] text-slate-600">{subtitle}</p>}
@@ -97,8 +99,8 @@ export function SModal({
               <X size={14} />
             </button>
           </div>
-          {children}
-          {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+          {sticky ? <div className="scroll-slim min-h-0 flex-1 overflow-y-auto p-5">{children}</div> : children}
+          {footer && <div className={sticky ? "flex shrink-0 justify-end gap-2 border-t border-white/[0.06] bg-abyss-850 px-5 py-3" : "mt-5 flex justify-end gap-2"}>{footer}</div>}
         </div>
       </div>
     </div>,
@@ -288,6 +290,7 @@ export function ScreenHeader({
   secondaryLabel,
   onSecondary,
   secondaryBusy,
+  extraAction,
 }: {
   title: string;
   count: number;
@@ -296,6 +299,7 @@ export function ScreenHeader({
   secondaryLabel?: string;
   onSecondary?: () => void;
   secondaryBusy?: boolean;
+  extraAction?: ReactNode;
 }) {
   const { t } = useT();
   return (
@@ -315,6 +319,7 @@ export function ScreenHeader({
             {secondaryLabel}
           </button>
         )}
+        {extraAction}
         <button
           onClick={onAction}
           className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-500 px-3.5 py-2 text-[12px] font-semibold text-white shadow-[0_0_24px_-8px_rgba(129,140,248,0.7)] transition-all hover:brightness-115"

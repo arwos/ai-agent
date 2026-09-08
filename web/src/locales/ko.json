@@ -25,10 +25,15 @@
     "type": "Type",
     "openMenu": "Open menu",
     "back": "Back to chat",
+    "preview": "미리보기",
     "previous": "Previous page",
     "next": "Next page"
   },
-  "theme": { "toggle": "색상 테마 전환", "light": "라이트", "dark": "다크" },
+  "theme": {
+    "toggle": "색상 테마 전환",
+    "light": "라이트",
+    "dark": "다크"
+  },
   "memory": {
     "title": "MEMORY",
     "notes": "Long-term notes",
@@ -51,6 +56,16 @@
     "thinking": "Thinking",
     "executing": "Executing"
   },
+  "subagent": {
+    "title": "하위 에이전트",
+    "status": {
+      "waiting_agent": "대기 중",
+      "reviewing": "검토 중",
+      "completed": "완료",
+      "failed": "실패",
+      "stopped": "중지됨"
+    }
+  },
   "system": {
     "online": "AI Online",
     "offline": "AI Offline",
@@ -66,6 +81,7 @@
     "kb": "Knowledge Base",
     "network": "Network",
     "memory": "Memory",
+    "workflows": "워크플로",
     "systemInfo": "Local LLMs",
     "proxies": "Proxy servers",
     "notes": "Long-term notes",
@@ -115,7 +131,12 @@
   },
   "header": {
     "genParams": "GENERATION PARAMS",
-    "preset": { "strict": "Strict", "reasoned": "Reasoned", "balanced": "Balanced", "creative": "Creative" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Reasoned",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
     "temperature": "Temperature",
     "topP": "Top-P",
     "clearHistory": "Clear history",
@@ -133,6 +154,7 @@
     "deleteDialogFiles": "The JSONL history and session memory file will be removed. Long-term notes and topic memories are kept.",
     "deleteDialogConfirm": "Delete dialog",
     "today": "TODAY",
+    "decodeError": "이 메시지를 디코딩하지 못했습니다",
     "thinking": "{name} is analyzing the request…",
     "executing": "Executing · generating response…",
     "copy": "Copy",
@@ -176,7 +198,18 @@
     "modeHint": "요청 처리 방식을 선택하세요",
     "modeTitle": "요청 모드",
     "workflowSelect": "워크플로 선택",
-    "mode": { "normal": "일반", "plan": "계획", "consult": "상담", "workflow": "워크플로" }
+    "mode": {
+      "normal": "일반",
+      "plan": "계획",
+      "consult": "상담",
+      "workflow": "워크플로"
+    },
+    "modeDescription": {
+      "normal": "요청을 일반적으로 처리합니다",
+      "plan": "실행 전에 계획을 만듭니다",
+      "consult": "파일을 변경하지 않고 답합니다",
+      "workflow": "설정된 워크플로를 실행합니다"
+    }
   },
   "panel": {
     "ctx": "Session context",
@@ -360,6 +393,59 @@
     "userInvocable": "Available to user",
     "disableModelInvocation": "Do not invoke automatically"
   },
+  "workflow": {
+    "title": "WORKFLOWS",
+    "new": "New workflow",
+    "edit": "Edit workflow",
+    "id": "Workflow ID",
+    "addStep": "Add step",
+    "step": "Step",
+    "stepId": "Step ID",
+    "stepTitle": "Step title",
+    "executor": "Executor",
+    "executor_self": "Self",
+    "executor_auto": "Automatic",
+    "executor_agent_id": "Agent",
+    "agentId": "Agent ID",
+    "retry": "Retry limit",
+    "storage": "Storage path",
+    "validation": "Validation",
+    "acceptance": "승인 기준",
+    "review": "Review",
+    "dependencies": "Dependencies",
+    "tools": "Required tools",
+    "skills": "Required skills",
+    "skillGroups": "Skill groups",
+    "substeps": "Substeps",
+    "substepId": "Substep ID",
+    "add": "Add",
+    "refresh": "Refresh",
+    "import": "Import YAML",
+    "export": "Export YAML",
+    "copy": "Copy",
+    "download": "Download",
+    "duplicate": "Duplicate",
+    "copySuffix": "copy",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "steps": "steps",
+    "empty": "No workflows yet.",
+    "deleteConfirm": "Delete workflow {name}?",
+    "deleted": "Workflow deleted",
+    "saved": "Workflow {name} saved",
+    "imported": "Workflow imported",
+    "importError": "YAML import failed: {error}",
+    "copied": "YAML copied",
+    "exportTitle": "Workflow YAML",
+    "saving": "저장 중…",
+    "savedState": "저장됨",
+    "unsaved": "변경 사항이 로컬에 저장되었습니다",
+    "validationError": "강조 표시된 필드를 입력하세요",
+    "dependencyOrder": "단계를 종속성보다 앞에 둘 수 없습니다",
+    "selectAgent": "에이전트 선택",
+    "noDependencies": "이전 단계가 없습니다",
+    "resourcesAtRun": "리소스는 워크플로 실행 시 선택한 에이전트로 확인됩니다"
+  },
   "systemInfo": {
     "title": "Local LLMs",
     "subtitle": "Hardware resources of the current system",
@@ -372,7 +458,10 @@
     "installedLlama": "llama.app installed",
     "updateLlama": "Update llama.app",
     "installLlama": "Install llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Processor",
     "memory": "System memory",
     "gpu": "Graphics card",
@@ -395,7 +484,10 @@
       "lb": "llama.app binaries",
       "lm": "llama.app models"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Binary path",
     "launchArgs": "Launch arguments separated by spaces",
     "modelsPath": "Models folder",

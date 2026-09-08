@@ -26,6 +26,7 @@ export type View =
   | "kb"
   | "network"
   | "memory"
+  | "workflows"
   | "systemInfo";
 
 export type AccentKey = "indigo" | "cyan" | "violet" | "emerald" | "amber";
@@ -89,6 +90,7 @@ export type ChatMessage = {
   toolError?: string;
   toolRunning?: boolean;
   retryableError?: boolean;
+  decodeError?: boolean;
 };
 
 export type Conversation = {
@@ -99,6 +101,10 @@ export type Conversation = {
   updatedAt: string;
   activeModel?: string;
   messages: ChatMessage[];
+  hasOlder?: boolean;
+  hasNewer?: boolean;
+  olderId?: string;
+  newerId?: string;
   memory?: { title: string; summary: string; topics: string[]; updatedAt?: string };
   goal?: import("./api").GoalState | null;
   goals?: import("./api").GoalState[];
@@ -195,7 +201,7 @@ export type Provider = {
   id: string;
   name: string;
   kind:
-    "openai" | "anthropic" | "ollama" | "openrouter" | "deepseek" | "mistral" | "groq" | "xai" | "google" | "custom";
+  "openai" | "anthropic" | "ollama" | "openrouter" | "deepseek" | "mistral" | "groq" | "xai" | "google" | "custom";
   baseUrl: string;
   apiKey: string;
   hasApiKey?: boolean;

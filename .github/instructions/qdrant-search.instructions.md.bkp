@@ -1,0 +1,24 @@
+---
+description: Load these instructions whenever the agent needs to explore, understand, or modify the codebase using semantic search (Qdrant). Applies to questions about functionality, locating implementations, refactoring, or any task that requires code analysis and context retrieval.
+applyTo: '**/*.{js,jsx,ts,tsx,py,java,go,rs,cpp,hpp,html,css,scss,md,yaml,yml,json}'
+---
+
+<!-- Tip: Use /create-instructions in chat to generate content with agent assistance -->
+
+# INSTRUCTIONS FOR USING SEMANTIC SEARCH (QDRANT)
+
+You have access to the vector search tool `qdrant-find` (MCP server qdrant-memory). Your entire codebase is fully indexed in this database.
+
+## When you MUST use `qdrant-find`:
+1. **Upon receiving any question about the code:** Before answering, making assumptions, or claiming that a file does not exist, ALWAYS perform a search query via `qdrant-find`.
+2. **Semantic Search:** If the user asks about logic, concepts, or functions (e.g., "where is authorization configured?", "how are payments handled?"), reformulate the question into keywords or concepts in English (or Russian if needed) and pass them to `qdrant-find`.
+3. **Finding connections:** If you find one function but lack context, query `qdrant-find` using the names of related components.
+
+## Query formatting rules:
+- Formulate the search string (`query`) as concisely as possible. Remove unnecessary words (instead of "show me the authorization function", write "auth login function handles").
+- If the first search yields no results, try rephrasing the query (use synonyms or English equivalents of terms), since the code is written in English.
+- Always request a sufficient number of results (`limit`: between 5 and 10) to gather full context.
+
+## Integration into workflow:
+Never write code "blindly". Your first step in any task is to call `qdrant-find`, analyze the retrieved code chunks, and only then proceed to modify files or respond to the user.
+Use the code with caution.

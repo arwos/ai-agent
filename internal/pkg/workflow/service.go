@@ -10,13 +10,16 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	maxSteps = 32
-	maxText  = 8192
+	maxSteps      = 32
+	maxSubsteps   = 32
+	maxText       = 8192
+	maxIdentifier = 128
 )
 
 type Definition struct {
@@ -33,12 +36,11 @@ type Step struct {
 	Title          string    `json:"title" yaml:"title"`
 	Description    string    `json:"description,omitempty" yaml:"description,omitempty"`
 	Substeps       []Substep `json:"substeps,omitempty" yaml:"substeps,omitempty"`
-	Inputs         []Input   `json:"inputs,omitempty" yaml:"inputs,omitempty"`
-	Outputs        []string  `json:"outputs,omitempty" yaml:"outputs,omitempty"`
-	Validation     string    `json:"validation,omitempty" yaml:"validation,omitempty"`
+	Acceptance     string    `json:"acceptance" yaml:"acceptance"`
+	Dependencies   []string  `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
 	RequiredTools  []string  `json:"required_tools,omitempty" yaml:"required_tools,omitempty"`
 	RequiredSkills []string  `json:"required_skills,omitempty" yaml:"required_skills,omitempty"`
-	Executor       string    `json:"executor" yaml:"executor"`
+	AgentID        string    `json:"agent_id" yaml:"agent_id"`
 	Retry          Retry     `json:"retry,omitempty" yaml:"retry,omitempty"`
 }
 
@@ -47,11 +49,6 @@ type Substep struct {
 	Title       string `yaml:"title" json:"title"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
-type Input struct {
-	Name    string `yaml:"name" json:"name"`
-	Ref     string `yaml:"ref" json:"ref"`
-	Literal string `yaml:"literal,omitempty" json:"literal,omitempty"`
-}
 type Retry struct {
 	MaxAttempts int `yaml:"max_attempts" json:"maxAttempts"`
 }
@@ -59,6 +56,77 @@ type Retry struct {
 type Service struct {
 	Root string
 	mu   sync.RWMutex
+}
+
+type Artifact struct {
+	ID        string `json:"id"`
+	ProfileID string `json:"-"`
+	Name      string `json:"name"`
+	Size      int64  `json:"size"`
+	CreatedAt string `json:"createdAt"`
+}
+
+func (s *Service) artifactPath(profile, id string) (string, error) {
+	if !safePart(profile) || !safePart(id) {
+		return "", fmt.Errorf("invalid profile or artifact id")
+	}
+	return filepath.Join(s.Root, profile, "artifacts", id), nil
+}
+
+func safeArtifactName(name string) bool {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && !strings.HasPrefix(clean, "/")
+}
+
+func (s *Service) CreateArtifact(profile, name string, content []byte) (Artifact, error) {
+	if !safePart(profile) || !safeArtifactName(name) || len(content) > 100<<20 {
+		return Artifact{}, fmt.Errorf("invalid artifact")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := fmt.Sprintf("artifact-%x", sha256.Sum256(append([]byte(name), content...)))
+	path, err := s.artifactPath(profile, id)
+	if err != nil {
+		return Artifact{}, err
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return Artifact{}, err
+	}
+	if err = os.WriteFile(path, content, 0644); err != nil {
+		return Artifact{}, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return Artifact{}, err
+	}
+	return Artifact{ID: id, ProfileID: profile, Name: name, Size: info.Size(), CreatedAt: info.ModTime().UTC().Format(time.RFC3339)}, nil
+}
+
+func (s *Service) GetArtifact(profile, id string) (Artifact, error) {
+	path, err := s.artifactPath(profile, id)
+	if err != nil {
+		return Artifact{}, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return Artifact{}, err
+	}
+	return Artifact{ID: id, ProfileID: profile, Name: id, Size: info.Size(), CreatedAt: info.ModTime().UTC().Format(time.RFC3339)}, nil
+}
+
+func (s *Service) ReadArtifact(profile, id string) ([]byte, error) {
+	path, err := s.artifactPath(profile, id)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > 100<<20 {
+		return nil, fmt.Errorf("artifact exceeds read limit")
+	}
+	return os.ReadFile(path)
 }
 
 func New(root string) *Service { return &Service{Root: filepath.Join(root, "workflow")} }
@@ -70,7 +138,7 @@ func (s *Service) path(profile, id string) (string, error) {
 	return filepath.Join(s.Root, profile, id+".yaml"), nil
 }
 func safePart(v string) bool {
-	return v != "" && v != "." && v != ".." && filepath.Base(v) == v && !strings.ContainsAny(v, `/\\`)
+	return v != "" && len(v) <= maxIdentifier && v != "." && v != ".." && filepath.Base(v) == v && !strings.ContainsAny(v, `/\\`)
 }
 
 func Validate(d Definition) error {
@@ -80,31 +148,67 @@ func Validate(d Definition) error {
 	if len(d.Name) > maxText || len(d.Description) > maxText || len(d.Steps) == 0 || len(d.Steps) > maxSteps {
 		return fmt.Errorf("invalid workflow size")
 	}
-	seen := map[string]bool{}
+	seenSteps := map[string]bool{}
 	for _, step := range d.Steps {
-		if !safePart(step.ID) || seen[step.ID] || strings.TrimSpace(step.Title) == "" {
+		if !safePart(step.ID) || seenSteps[step.ID] || strings.TrimSpace(step.Title) == "" {
 			return fmt.Errorf("workflow steps require unique ids and titles")
 		}
-		seen[step.ID] = true
-		if len(step.Description) > maxText || len(step.Validation) > maxText || step.Executor == "" {
+		seenSteps[step.ID] = true
+		if len(step.Title) > maxText || len(step.Description) > maxText || len(step.Acceptance) > maxText || strings.TrimSpace(step.Acceptance) == "" {
 			return fmt.Errorf("invalid workflow step %q", step.ID)
 		}
-		if step.Executor != "self" && step.Executor != "agent_id" && step.Executor != "auto" {
-			return fmt.Errorf("unsupported executor %q", step.Executor)
-		}
-		if step.Retry.MaxAttempts == 0 {
-			step.Retry.MaxAttempts = 1
+		if !safePart(step.AgentID) {
+			return fmt.Errorf("invalid agent id for workflow step %q", step.ID)
 		}
 		if step.Retry.MaxAttempts < 1 || step.Retry.MaxAttempts > 10 {
 			return fmt.Errorf("invalid retry limit")
 		}
-		for _, in := range step.Inputs {
-			if in.Ref != "user_request" && in.Ref != "previous_result" && in.Ref != "artifact_id" && in.Ref != "workspace_path" && in.Ref != "literal" {
-				return fmt.Errorf("unsupported input reference %q", in.Ref)
+		if len(step.Substeps) > maxSubsteps {
+			return fmt.Errorf("workflow step %q exceeds collection limits", step.ID)
+		}
+		if len(step.Dependencies) > maxSteps {
+			return fmt.Errorf("workflow step %q has too many dependencies", step.ID)
+		}
+		seenDependencies := map[string]bool{}
+		for _, dependency := range step.Dependencies {
+			if !safePart(dependency) || seenDependencies[dependency] || dependency == step.ID {
+				return fmt.Errorf("workflow step %q has invalid dependencies", step.ID)
+			}
+			seenDependencies[dependency] = true
+		}
+		seenSubsteps := map[string]bool{}
+		for _, substep := range step.Substeps {
+			if !safePart(substep.ID) || seenSubsteps[substep.ID] || strings.TrimSpace(substep.Title) == "" || len(substep.Title) > maxText || len(substep.Description) > maxText {
+				return fmt.Errorf("invalid substep in workflow step %q", step.ID)
+			}
+			seenSubsteps[substep.ID] = true
+		}
+		for _, capability := range append(append([]string{}, step.RequiredTools...), step.RequiredSkills...) {
+			if !safeCapability(capability) {
+				return fmt.Errorf("workflow step %q has invalid capability", step.ID)
+			}
+		}
+	}
+	stepOrder := make(map[string]int, len(d.Steps))
+	for index, step := range d.Steps {
+		stepOrder[step.ID] = index
+	}
+	for index, step := range d.Steps {
+		for _, dependency := range step.Dependencies {
+			dependencyIndex, exists := stepOrder[dependency]
+			if !exists {
+				return fmt.Errorf("workflow step %q depends on unknown step %q", step.ID, dependency)
+			}
+			if dependencyIndex >= index {
+				return fmt.Errorf("workflow step %q must depend only on preceding steps", step.ID)
 			}
 		}
 	}
 	return nil
+}
+
+func safeCapability(v string) bool {
+	return v != "" && len(v) <= maxIdentifier && !strings.ContainsAny(v, `/\\\t\n\r `)
 }
 
 func (s *Service) List(profile string) ([]Definition, error) {
@@ -148,9 +252,6 @@ func (s *Service) read(path string) (Definition, error) {
 	}
 	var d Definition
 	if err = yaml.Unmarshal(b, &d); err != nil {
-		return d, err
-	}
-	if err = Validate(d); err != nil {
 		return d, err
 	}
 	return d, nil
@@ -211,6 +312,11 @@ func (s *Service) Import(profile, content string) (Definition, error) {
 		return d, err
 	}
 	d.Version = 0
+	// Older workflow files remain editable so users can add the now-required
+	// builder agent and acceptance criteria. Do not persist an invalid import.
+	if err := Validate(d); err != nil {
+		return d, nil
+	}
 	return s.Save(profile, d)
 }
 func (s *Service) Export(profile, id string) (string, error) {

@@ -68,7 +68,7 @@ func Mode(mode string) string {
 	case "consult":
 		return "\n\n## Consult mode\nThis is a read-only investigation. You may use only fs.list_dir, fs.read_file, fs.file_info, fs.grep, git.status, git.diff, and git.log. Never modify files, run commands, call MCP tools, or perform destructive actions."
 	case "workflow":
-		return "\n\n## Workflow mode\nFollow the selected workflow's ordered steps and declared output and validation contracts. Do not skip or reorder steps."
+		return "\n\n## Workflow mode\nFollow the selected workflow's ordered steps and validation rules. Do not skip or reorder steps."
 	default:
 		return ""
 	}

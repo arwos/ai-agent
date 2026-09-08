@@ -67,13 +67,22 @@ export type PlanTask = {
   error?: string;
   startedAt?: string;
   finishedAt?: string;
-  status: "pending" | "running" | "done" | "failed" | "skipped";
+  reviewerAgentId?: string;
+  reviewerDialogId?: string;
+  acceptance?: string;
+  reviewVerdict?: "pass" | "fail";
+  reviewSummary?: string;
+  reviewEvidence?: string[];
+  reviewFeedback?: string;
+  history?: { attempt: number; builderResult?: string; reviewVerdict?: "pass" | "fail"; reviewSummary?: string; reviewEvidence?: string[]; reviewFeedback?: string }[];
+  status: "pending" | "running" | "waiting_agent" | "reviewing" | "done" | "failed" | "skipped";
 };
 
 export type GoalState = {
   id: string;
   dialogId: string;
   goal: string;
+  workflowId?: string;
   status: "running" | "awaiting_approval" | "paused" | "done" | "failed" | "stopped" | "incomplete";
   tasks: PlanTask[];
   approval?: { id: string; kind: "approval"; title: string; detail?: string; command?: string; createdAt?: string };
@@ -81,10 +90,12 @@ export type GoalState = {
   updatedAt?: string;
 };
 
-export type WorkflowInput = {
-  name: string;
-  ref: "user_request" | "previous_result" | "artifact_id" | "workspace_path";
-  literal?: string;
+export type ChildRunStatus = "waiting_agent" | "reviewing" | "completed" | "failed" | "stopped";
+export type ChildRunFrame = {
+  dialogId: string;
+  childDialogId: string;
+  taskId: string;
+  status: ChildRunStatus;
 };
 
 export type WorkflowSubstep = { id: string; title: string; description?: string };
@@ -94,13 +105,12 @@ export type WorkflowStep = {
   title: string;
   description: string;
   substeps?: WorkflowSubstep[];
-  inputs?: WorkflowInput[];
-  outputs?: string[];
-  validation?: string;
+  acceptance: string;
+  dependencies?: string[];
   required_tools?: string[];
   required_skills?: string[];
-  executor?: "self" | "agent_id" | "auto";
-  retry?: { maxAttempts: number };
+  agent_id: string;
+  retry: { maxAttempts: number };
 };
 
 export type Workflow = {
@@ -149,12 +159,15 @@ export const WS_EVENT_LLAMA_MODEL_PULL: WsEvent = 131;
 
 export const WS_EVENT_LLAMA_MODEL_REMOVE: WsEvent = 132;
 
-export const WS_EVENT_WORKFLOW_LIST: WsEvent = 139;
-export const WS_EVENT_WORKFLOW_GET: WsEvent = 140;
-export const WS_EVENT_WORKFLOW_SAVE: WsEvent = 141;
-export const WS_EVENT_WORKFLOW_DELETE: WsEvent = 142;
-export const WS_EVENT_WORKFLOW_IMPORT: WsEvent = 143;
-export const WS_EVENT_WORKFLOW_EXPORT: WsEvent = 144;
+export const WS_EVENT_WORKFLOW_LIST: WsEvent = 133;
+export const WS_EVENT_WORKFLOW_GET: WsEvent = 134;
+export const WS_EVENT_WORKFLOW_SAVE: WsEvent = 135;
+export const WS_EVENT_WORKFLOW_DELETE: WsEvent = 136;
+export const WS_EVENT_WORKFLOW_IMPORT: WsEvent = 137;
+export const WS_EVENT_WORKFLOW_EXPORT: WsEvent = 138;
+export const WS_EVENT_WORKFLOW_PAUSE: WsEvent = 139;
+export const WS_EVENT_WORKFLOW_CONTINUE: WsEvent = 140;
+export const WS_EVENT_WORKFLOW_STOP: WsEvent = 141;
 
 class SocketTransport {
   private socket: WebSocket | null = null;
@@ -275,6 +288,9 @@ export const saveWorkflow = (workflow: Workflow) => wsRequest<Workflow>(WS_EVENT
 export const deleteWorkflow = (id: string) => wsRequest<void>(WS_EVENT_WORKFLOW_DELETE, { id });
 export const importWorkflow = (content: string) => wsRequest<Workflow>(WS_EVENT_WORKFLOW_IMPORT, { content });
 export const exportWorkflow = (id: string) => wsRequest<{ content: string }>(WS_EVENT_WORKFLOW_EXPORT, { id });
+export const pauseWorkflow = (dialogId: string) => wsRequest<{ status: string }>(WS_EVENT_WORKFLOW_PAUSE, { dialog_id: dialogId });
+export const continueWorkflow = (dialogId: string) => wsRequest<{ status: string }>(WS_EVENT_WORKFLOW_CONTINUE, { dialog_id: dialogId });
+export const stopWorkflow = (dialogId: string) => wsRequest<{ status: string }>(WS_EVENT_WORKFLOW_STOP, { dialog_id: dialogId });
 
 const accent = (value: string): Skill["accent"] =>
   ["indigo", "cyan", "violet", "emerald", "amber"].includes(value) ? (value as Skill["accent"]) : "indigo";
@@ -387,7 +403,7 @@ export function subscribeFrames(listener: FrameHandler): () => void {
 export async function pickFolder(): Promise<Workspace | null> {
   try {
     const operation = await wsRequest<{ operationId: string }>(57);
-    for (;;) {
+    for (; ;) {
       await new Promise((resolve) => window.setTimeout(resolve, 500));
       const status = await wsRequest<{
         status: "pending" | "completed" | "error";
@@ -409,7 +425,7 @@ export async function pickFolder(): Promise<Workspace | null> {
 export async function pickSkillFolder(): Promise<string | null> {
   try {
     const operation = await wsRequest<{ operationId: string }>(105);
-    for (;;) {
+    for (; ;) {
       await new Promise((resolve) => window.setTimeout(resolve, 500));
       const status = await wsRequest<{ status: "pending" | "completed" | "error"; path?: string; message?: string }>(
         106,

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"testing"
 
@@ -13,7 +15,9 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/agent"
 	"github.com/arwos/ai-agent/internal/pkg/configstore"
 	"github.com/arwos/ai-agent/internal/pkg/dialog"
+	"github.com/arwos/ai-agent/internal/pkg/goal"
 	"github.com/arwos/ai-agent/internal/pkg/mcp"
+	"github.com/arwos/ai-agent/internal/pkg/models"
 	"github.com/arwos/ai-agent/internal/pkg/skills"
 	"github.com/arwos/ai-agent/internal/pkg/workspace"
 )
@@ -59,6 +63,181 @@ func TestWebSocketUserResponseUnblocksMatchingDialogRequest(t *testing.T) {
 	}
 	if err := a.handleWebSocketInput(ev, testWSMeta{ctx: context.Background(), id: "socket-b"}); err == nil {
 		t.Fatal("expected another dialog to be rejected")
+	}
+}
+
+func TestPersistedWorkflowApprovalDeclinedPausesWithoutSideEffects(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	store, database := newChildRecoveryStore(t)
+	defer database.Close()
+	profileID, dialogID := "default", "workflow-decline"
+	approval := goal.Goal{
+		ID: "goal-1", DialogID: dialogID, Goal: "run workflow", Status: "awaiting_approval",
+		Tasks:    []goal.GoalTask{{ID: "task-1", Label: "write file", Tools: []string{"fs.write_file"}, Status: "pending"}},
+		Approval: &goal.GoalApproval{ID: "approval-1", Kind: "approval", Command: "goal.start"},
+	}
+	if err := dialogs.SaveGoal(dialog.SessionKey(profileID, dialogID), approval); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{
+		dialogs: dialogs,
+		store:   store,
+		publish: func(StreamMessage) {},
+	}
+	if err := sendPersistedApproval(t, a, dialogID, "approval-1", false); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := dialogs.Goal(dialog.SessionKey(profileID, dialogID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.Status != "paused" || saved.Approval != nil || saved.Tasks[0].Status != "pending" {
+		t.Fatalf("declined approval changed unexpected state: %#v", saved)
+	}
+	history, err := dialogs.History(dialog.SessionKey(profileID, dialogID), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("declined approval created side effects in history: %#v", history)
+	}
+}
+
+func TestPersistedWorkflowApprovalAcceptedCompletesApprovalWithoutUserMessage(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	store, database := newChildRecoveryStore(t)
+	defer database.Close()
+	profileID, dialogID := "default", "workflow-accept"
+	approval := goal.Goal{
+		ID: "goal-1", DialogID: dialogID, Goal: "run workflow", Status: "awaiting_approval",
+		Tasks:    []goal.GoalTask{{ID: "task-1", Label: "inspect", Status: "pending"}},
+		Approval: &goal.GoalApproval{ID: "approval-1", Kind: "approval", Command: "goal.start"},
+	}
+	if err := dialogs.SaveGoal(dialog.SessionKey(profileID, dialogID), approval); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{
+		dialogs: dialogs,
+		store:   store,
+		publish: func(StreamMessage) {},
+	}
+	if err := sendPersistedApproval(t, a, dialogID, "approval-1", true); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := dialogs.Goal(dialog.SessionKey(profileID, dialogID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.Status != "done" || saved.Approval != nil {
+		t.Fatalf("accepted approval changed unexpected state: %#v", saved)
+	}
+	history, err := dialogs.History(dialog.SessionKey(profileID, dialogID), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("accepted approval created a synthetic user message: %#v", history)
+	}
+}
+
+func sendPersistedApproval(t *testing.T, a *App, dialogID, requestID string, accepted bool) error {
+	t.Helper()
+	ev := event.Pool.Get()
+	defer event.Pool.Put(ev)
+	if err := ev.Encode(chatWebSocketInput{Type: "user.response", ConvID: dialogID, ReqID: requestID, Value: accepted}); err != nil {
+		return err
+	}
+	return a.handleWebSocketInput(ev, testWSMeta{ctx: context.Background()})
+}
+
+func TestRestoreChildRunsIsIdempotent(t *testing.T) {
+	app, dialogs, store, database := newChildRecoveryApp(t)
+	defer database.Close()
+	parentID, childID := "parent", "child"
+	if _, err := store.ConversationUpsert(models.Conversation{ID: parentID, ProfileID: "default", WorkspaceID: "default", Title: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConversationUpsert(models.Conversation{ID: childID, ProfileID: "default", WorkspaceID: "default", ParentID: parentID, Title: "child"}); err != nil {
+		t.Fatal(err)
+	}
+	parent := goal.Goal{ID: "goal-1", DialogID: parentID, Goal: "delegate work", Status: "running", Tasks: []goal.GoalTask{{ID: "task-1", Label: "child task", ChildDialogID: childID, RunTokenHash: "hash", Status: "waiting_agent"}}}
+	if err := dialogs.SaveGoal(dialog.SessionKey("default", parentID), parent); err != nil {
+		t.Fatal(err)
+	}
+	app.restoreChildRuns()
+	app.restoreChildRuns()
+	if len(app.childRuns) != 1 {
+		t.Fatalf("restored child runs = %d, want 1: %#v", len(app.childRuns), app.childRuns)
+	}
+	run, ok := app.childRuns[childID]
+	if !ok || run.ParentDialogID != parentID || run.TaskID != "task-1" || run.TokenHash != "hash" {
+		t.Fatalf("unexpected restored run: %#v", run)
+	}
+	if len(app.chatJobs) != 0 {
+		t.Fatalf("restore started duplicate jobs: %#v", app.chatJobs)
+	}
+}
+
+func newChildRecoveryApp(t *testing.T) (*App, *dialog.Store, *configstore.Store, orm.ORM) {
+	store, database := newChildRecoveryStore(t)
+	dialogs := dialog.NewStore(t.TempDir())
+	return &App{store: store, dialogs: dialogs, childRuns: map[string]childRun{}, chatJobs: map[string]*chatJob{}}, dialogs, store, database
+}
+
+func newChildRecoveryStore(t *testing.T) (*configstore.Store, orm.ORM) {
+	t.Helper()
+	database := orm.New(context.Background())
+	if err := database.ApplyConfig(sqlite.Name, &sqlite.ConfigGroup{Pool: []sqlite.Config{{Tags: "master", File: filepath.Join(t.TempDir(), "db.sqlite"), Mode: "rwc", Journal: "WAL", LockingMode: "NORMAL", OtherParams: "_busy_timeout=10000"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Tag("master").Tx(context.Background(), "test.schema", func(tx orm.Tx) {
+		tx.Exec(func(q orm.Executor) {
+			q.SQL(`CREATE TABLE profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT '', accent TEXT NOT NULL DEFAULT 'indigo', temperature REAL NOT NULL DEFAULT 0.7, top_p REAL NOT NULL DEFAULT 0.9, created_at TEXT NOT NULL)`)
+		})
+		tx.Exec(func(q orm.Executor) {
+			q.SQL(`CREATE TABLE profile_state (profile_id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 0)`)
+		})
+		tx.Exec(func(q orm.Executor) {
+			q.SQL(`CREATE TABLE conversations (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL, updated_at TEXT NOT NULL, active_model TEXT NOT NULL DEFAULT '', parent_id TEXT NOT NULL DEFAULT '')`)
+		})
+	}); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	store := configstore.New(database)
+	if _, err := store.ProfileCreate(models.Profile{ID: "default", Name: "Default"}); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	return store, database
+}
+
+func TestAgentResultResumesParentWithoutSyntheticUserMessage(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	profileID, parentID, childID := "default", "parent", "child"
+	plain := "callback-token"
+	sum := sha256.Sum256([]byte(plain))
+	run := childRun{ProfileID: profileID, ParentDialogID: parentID, ChildDialogID: childID, TaskID: "task-1", TokenHash: hex.EncodeToString(sum[:])}
+	parent := goal.Goal{ID: "goal-1", DialogID: parentID, Goal: "delegate work", Status: "running", Tasks: []goal.GoalTask{{ID: "task-1", Label: "child task", ChildDialogID: childID, RunTokenHash: run.TokenHash, Status: "waiting_agent"}}}
+	if err := dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := dialogs.Append(dialog.SessionKey(profileID, parentID), dialog.Message{Role: "user", Content: "delegate work"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dialogs.Append(dialog.SessionKey(profileID, childID), dialog.Message{Role: "user", Content: "child work"}); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{dialogs: dialogs, childRuns: map[string]childRun{childID: run}, chatJobs: map[string]*chatJob{}, publish: func(StreamMessage) {}}
+	if _, err := app.completeChildRun(run, map[string]any{"run_token": plain, "status": "success", "result": "finished"}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := dialogs.History(dialog.SessionKey(profileID, parentID), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Role != "user" || history[0].Content != "delegate work" {
+		t.Fatalf("agent.result added synthetic parent message: %#v", history)
 	}
 }
 
@@ -179,6 +358,59 @@ func TestBrowserRequestEventIDsAreUnique(t *testing.T) {
 			t.Fatalf("duplicate application event ID %d", id)
 		}
 		seen[id] = struct{}{}
+	}
+}
+
+func TestCompleteChildRunRejectsWrongAndDuplicateCallback(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	parentID := "parent"
+	profileID := "default"
+	plain := "callback-token"
+	sum := sha256.Sum256([]byte(plain))
+	run := childRun{ProfileID: profileID, ParentDialogID: parentID, ChildDialogID: "child", TaskID: "task", TokenHash: hex.EncodeToString(sum[:])}
+	parent := goal.Goal{ID: "goal", DialogID: parentID, Goal: "delegate", Status: "running", Tasks: []goal.GoalTask{{ID: "task", Status: "waiting_agent", ChildDialogID: "child", RunTokenHash: run.TokenHash}}}
+	if err := dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), parent); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{dialogs: dialogs, childRuns: map[string]childRun{run.ChildDialogID: run}, publish: func(StreamMessage) {}}
+	if _, err := a.completeChildRun(run, map[string]any{"run_token": "wrong", "status": "success", "result": "ok"}); err == nil {
+		t.Fatal("wrong callback token accepted")
+	}
+	if _, err := a.completeChildRun(run, map[string]any{"run_token": plain, "status": "success", "result": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.completeChildRun(run, map[string]any{"run_token": plain, "status": "success", "result": "again"}); err == nil {
+		t.Fatal("duplicate callback accepted")
+	}
+}
+
+func TestCancelChildJobsStopsAndPersistsParentState(t *testing.T) {
+	dialogs := dialog.NewStore(t.TempDir())
+	parentID, profileID, childID := "parent", "default", "child"
+	parent := goal.Goal{ID: "goal", DialogID: parentID, Goal: "delegate work", WorkflowID: "workflow", CurrentTaskID: "task", Status: "running", Tasks: []goal.GoalTask{{ID: "task", Label: "child task", Status: "waiting_agent", ChildDialogID: childID}}}
+	if err := dialogs.SaveGoal(dialog.SessionKey(profileID, parentID), parent); err != nil {
+		t.Fatal(err)
+	}
+	childStopped := false
+	a := &App{
+		dialogs:   dialogs,
+		childRuns: map[string]childRun{childID: {ProfileID: profileID, ParentDialogID: parentID, ChildDialogID: childID, TaskID: "task"}},
+		chatJobs:  map[string]*chatJob{childID: {cancel: func() { childStopped = true }}},
+		publish:   func(StreamMessage) {},
+	}
+	a.cancelChildJobs(profileID, parentID)
+	if !childStopped {
+		t.Fatal("child job was not cancelled")
+	}
+	if _, exists := a.childRuns[childID]; exists {
+		t.Fatal("child run was not removed")
+	}
+	saved, err := dialogs.Goal(dialog.SessionKey(profileID, parentID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.CurrentTaskID != "" || saved.Tasks[0].Status != "stopped" {
+		t.Fatalf("unexpected persisted parent state: %#v", saved)
 	}
 }
 

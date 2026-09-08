@@ -37,10 +37,15 @@
     "type": "ধরন",
     "openMenu": "মেনু খুলুন",
     "back": "চ্যাটে ফিরে যান",
+    "preview": "প্রিভিউ",
     "previous": "আগের পৃষ্ঠা",
     "next": "পরের পৃষ্ঠা"
   },
-  "theme": { "toggle": "রঙের স্কিম পরিবর্তন করুন", "light": "লাইট", "dark": "ডার্ক" },
+  "theme": {
+    "toggle": "রঙের স্কিম পরিবর্তন করুন",
+    "light": "লাইট",
+    "dark": "ডার্ক"
+  },
   "memory": {
     "title": "মেমরি",
     "notes": "দীর্ঘমেয়াদি নোট",
@@ -63,6 +68,16 @@
     "thinking": "ভাবছে",
     "executing": "চালানো হচ্ছে"
   },
+  "subagent": {
+    "title": "চাইল্ড এজেন্ট",
+    "status": {
+      "waiting_agent": "অপেক্ষমাণ",
+      "reviewing": "পর্যালোচনা",
+      "completed": "সম্পন্ন",
+      "failed": "ব্যর্থ",
+      "stopped": "বন্ধ"
+    }
+  },
   "system": {
     "online": "AI অনলাইন",
     "offline": "AI অফলাইন",
@@ -78,6 +93,7 @@
     "kb": "জ্ঞানভান্ডার",
     "network": "নেটওয়ার্ক",
     "memory": "মেমরি",
+    "workflows": "ওয়ার্কফ্লো",
     "systemInfo": "স্থানীয় LLM",
     "proxies": "প্রক্সি সার্ভার",
     "notes": "দীর্ঘমেয়াদি নোট",
@@ -155,6 +171,7 @@
     "deleteDialogFiles": "JSONL ইতিহাস ও সেশন মেমরি ফাইল সরানো হবে। দীর্ঘমেয়াদি নোট এবং বিষয়ভিত্তিক মেমরি রাখা হবে।",
     "deleteDialogConfirm": "ডায়ালগ মুছুন",
     "today": "আজ",
+    "decodeError": "এই বার্তাটি ডিকোড করা যায়নি",
     "thinking": "{name} অনুরোধটি বিশ্লেষণ করছে…",
     "executing": "চালানো হচ্ছে · উত্তর তৈরি হচ্ছে…",
     "copy": "কপি",
@@ -198,7 +215,18 @@
     "modeHint": "অনুরোধ পরিচালনার ধরন বেছে নিন",
     "modeTitle": "অনুরোধের মোড",
     "workflowSelect": "ওয়ার্কফ্লো বেছে নিন",
-    "mode": { "normal": "সাধারণ", "plan": "পরিকল্পনা", "consult": "পরামর্শ", "workflow": "ওয়ার্কফ্লো" }
+    "mode": {
+      "normal": "সাধারণ",
+      "plan": "পরিকল্পনা",
+      "consult": "পরামর্শ",
+      "workflow": "ওয়ার্কফ্লো"
+    },
+    "modeDescription": {
+      "normal": "অনুরোধটি সাধারণভাবে সম্পন্ন করুন",
+      "plan": "কাজের আগে একটি পরিকল্পনা তৈরি করুন",
+      "consult": "ফাইল পরিবর্তন না করে উত্তর দিন",
+      "workflow": "কনফিগার করা ওয়ার্কফ্লো চালান"
+    }
   },
   "panel": {
     "ctx": "সেশন কনটেক্সট",
@@ -382,6 +410,62 @@
     "userInvocable": "ব্যবহারকারীর জন্য উপলব্ধ",
     "disableModelInvocation": "স্বয়ংক্রিয়ভাবে আহ্বান করবেন না"
   },
+  "workflow": {
+    "title": "WORKFLOWS",
+    "new": "New workflow",
+    "edit": "Edit workflow",
+    "id": "Workflow ID",
+    "addStep": "Add step",
+    "step": "Step",
+    "stepId": "Step ID",
+    "stepTitle": "Step title",
+    "executor": "Executor",
+    "executor_self": "Self",
+    "executor_auto": "Automatic",
+    "executor_agent_id": "Agent",
+    "agentId": "Agent ID",
+    "retry": "Retry limit",
+    "storage": "Storage path",
+    "validation": "Validation",
+    "acceptance": "Acceptance criteria",
+    "review": "Review",
+    "dependencies": "Dependencies",
+    "tools": "Required tools",
+    "skills": "Required skills",
+    "skillGroups": "Skill groups",
+    "substeps": "Substeps",
+    "substepId": "Substep ID",
+    "add": "Add",
+    "refresh": "Refresh",
+    "import": "Import YAML",
+    "export": "Export YAML",
+    "copy": "Copy",
+    "download": "Download",
+    "duplicate": "Duplicate",
+    "copySuffix": "copy",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "steps": "steps",
+    "empty": "No workflows yet.",
+    "deleteConfirm": "Delete workflow {name}?",
+    "deleted": "Workflow deleted",
+    "saved": "Workflow {name} saved",
+    "imported": "Workflow imported",
+    "importError": "YAML import failed: {error}",
+    "copied": "YAML copied",
+    "exportTitle": "Workflow YAML",
+    "saving": "সংরক্ষণ করা হচ্ছে…",
+    "savedState": "সংরক্ষিত",
+    "unsaved": "পরিবর্তনগুলো স্থানীয়ভাবে সংরক্ষিত",
+    "validationError": "চিহ্নিত ক্ষেত্রগুলো পূরণ করুন",
+    "dependencyOrder": "কোনো ধাপকে তার নির্ভরতার আগে রাখা যাবে না",
+    "selectAgent": "একটি এজেন্ট নির্বাচন করুন",
+    "noDependencies": "আগের কোনো ধাপ নেই",
+    "resourcesAtRun": "ওয়ার্কফ্লো চালানোর সময় নির্বাচিত এজেন্টের জন্য রিসোর্স যাচাই করা হয়"
+    ,"inputsHint": "এই ধাপটি কী ডেটা পাবে তা বেছে নিন: ব্যবহারকারীর অনুরোধ, আগের ফলাফল, আর্টিফ্যাক্ট, ওয়ার্কস্পেস পথ বা নির্দিষ্ট মান।",
+    "inputRef": { "user_request": "ব্যবহারকারীর অনুরোধ", "previous_result": "আগের ধাপের ফলাফল", "artifact_id": "সংরক্ষিত আর্টিফ্যাক্ট", "workspace_path": "ওয়ার্কস্পেস পথ", "literal": "নির্দিষ্ট মান" }
+    ,"source": "উৎস"
+  },
   "systemInfo": {
     "title": "স্থানীয় LLM",
     "subtitle": "বর্তমান সিস্টেমের হার্ডওয়্যার সম্পদ",
@@ -394,7 +478,10 @@
     "installedLlama": "llama.app ইনস্টল হয়েছে",
     "updateLlama": "llama.app আপডেট করুন",
     "installLlama": "llama.app ইনস্টল করুন",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "প্রসেসর",
     "memory": "সিস্টেম মেমরি",
     "gpu": "গ্রাফিক্স কার্ড",

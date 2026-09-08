@@ -53,6 +53,7 @@ type Scope struct {
 	MCPCall     func(context.Context, MCPTool, map[string]any) (any, error)
 	Request     func(context.Context, map[string]any) (any, error)
 	GoalUpdate  func(context.Context, map[string]any) (any, error)
+	Scoped      map[string]func(context.Context, map[string]any) (any, error)
 	Mode        string
 }
 
@@ -132,8 +133,15 @@ func (r *Registry) Builtins() []BuiltinServer {
 }
 
 func (r *Registry) Execute(ctx context.Context, scope Scope, name string, args map[string]any) (string, error) {
-	if scope.Mode == "consult" && !consultTool(name) {
+	if scope.Mode == "consult" && !consultTool(name) && !consultControlTool(name) {
 		return "", fmt.Errorf("tool %q is not available in consult mode", name)
+	}
+	if handler := scope.Scoped[name]; handler != nil {
+		value, err := handler(ctx, args)
+		if err != nil {
+			return "", err
+		}
+		return marshal(value)
 	}
 	aliased := false
 	if target, exists := scope.Aliases[name]; exists {
@@ -184,10 +192,21 @@ func (r *Registry) Execute(ctx context.Context, scope Scope, name string, args m
 }
 
 func consultTool(name string) bool {
-	if target, ok := map[string]string{"fs.list_dir": "fs.list_dir", "fs.read_file": "fs.read_file", "fs.file_info": "fs.file_info", "fs.grep": "fs.grep", "git.status": "git.status", "git.diff": "git.diff", "git.log": "git.log"}[name]; ok {
-		return target != ""
+	switch name {
+	case "fs.list_dir", "fs.read_file", "fs.file_info", "fs.grep", "git.status", "git.diff", "git.log":
+		return true
+	default:
+		return false
 	}
-	return false
+}
+
+func consultControlTool(name string) bool {
+	switch name {
+	case "agent.list", "agent.run", "agent.result", "workflow.review_result":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Registry) Prompt(extra []Tool) string {

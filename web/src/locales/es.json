@@ -25,10 +25,15 @@
     "type": "Tipo",
     "openMenu": "Abrir menú",
     "back": "Volver al chat",
+    "preview": "Vista previa",
     "previous": "Página anterior",
     "next": "Página siguiente"
   },
-  "theme": { "toggle": "Cambiar esquema de color", "light": "Claro", "dark": "Oscuro" },
+  "theme": {
+    "toggle": "Cambiar esquema de color",
+    "light": "Claro",
+    "dark": "Oscuro"
+  },
   "memory": {
     "title": "MEMORIA",
     "notes": "Notas a largo plazo",
@@ -51,6 +56,16 @@
     "thinking": "Pensando",
     "executing": "Ejecutando"
   },
+  "subagent": {
+    "title": "Agentes secundarios",
+    "status": {
+      "waiting_agent": "Esperando",
+      "reviewing": "Revisando",
+      "completed": "Completado",
+      "failed": "Fallido",
+      "stopped": "Detenido"
+    }
+  },
   "system": {
     "online": "IA en línea",
     "offline": "IA sin conexión",
@@ -66,6 +81,7 @@
     "kb": "Base de conocimientos",
     "network": "Red",
     "memory": "Memoria",
+    "workflows": "Flujos",
     "systemInfo": "LLM locales",
     "proxies": "Servidores proxy",
     "notes": "Notas a largo plazo",
@@ -115,7 +131,12 @@
   },
   "header": {
     "genParams": "PARÁMETROS DE GENERACIÓN",
-    "preset": { "strict": "Strict", "reasoned": "Reasoned", "balanced": "Balanced", "creative": "Creative" },
+    "preset": {
+      "strict": "Strict",
+      "reasoned": "Reasoned",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
     "temperature": "Temperatura",
     "topP": "Top-P",
     "clearHistory": "Borrar historial",
@@ -133,6 +154,7 @@
     "deleteDialogFiles": "Se eliminarán el historial JSONL y el archivo de memoria de sesión. Se conservarán las notas a largo plazo y las memorias temáticas.",
     "deleteDialogConfirm": "Eliminar diálogo",
     "today": "HOY",
+    "decodeError": "No se pudo decodificar este mensaje",
     "thinking": "{name} is analyzing the request…",
     "executing": "Ejecutando · generando respuesta…",
     "copy": "Copiar",
@@ -176,7 +198,18 @@
     "modeHint": "Elegir cómo procesar esta solicitud",
     "modeTitle": "MODO DE SOLICITUD",
     "workflowSelect": "Seleccionar flujo",
-    "mode": { "normal": "Normal", "plan": "Plan", "consult": "Consulta", "workflow": "Flujo" }
+    "mode": {
+      "normal": "Normal",
+      "plan": "Plan",
+      "consult": "Consulta",
+      "workflow": "Flujo"
+    },
+    "modeDescription": {
+      "normal": "Completar la solicitud normalmente",
+      "plan": "Crear un plan antes de actuar",
+      "consult": "Responder sin cambiar archivos",
+      "workflow": "Ejecutar un flujo configurado"
+    }
   },
   "panel": {
     "ctx": "Contexto de sesión",
@@ -360,6 +393,59 @@
     "userInvocable": "Disponible para el usuario",
     "disableModelInvocation": "No invocar automáticamente"
   },
+  "workflow": {
+    "title": "FLUJOS",
+    "new": "Nuevo flujo",
+    "edit": "Editar flujo",
+    "id": "ID del flujo",
+    "addStep": "Añadir paso",
+    "step": "Paso",
+    "stepId": "ID del paso",
+    "stepTitle": "Título del paso",
+    "executor": "Ejecutor",
+    "executor_self": "Propio",
+    "executor_auto": "Automático",
+    "executor_agent_id": "Agente",
+    "agentId": "ID del agente",
+    "retry": "Límite de reintentos",
+    "storage": "Ruta de almacenamiento",
+    "validation": "Validación",
+    "acceptance": "Criterios de aceptación",
+    "review": "Revisión",
+    "dependencies": "Dependencias",
+    "tools": "Herramientas requeridas",
+    "skills": "Habilidades requeridas",
+    "skillGroups": "Grupos de habilidades",
+    "substeps": "Subpasos",
+    "substepId": "ID del subpaso",
+    "add": "Añadir",
+    "refresh": "Actualizar",
+    "import": "Importar YAML",
+    "export": "Exportar YAML",
+    "copy": "Copiar",
+    "download": "Descargar",
+    "duplicate": "Duplicar",
+    "copySuffix": "copia",
+    "enabled": "Activado",
+    "disabled": "Desactivado",
+    "steps": "pasos",
+    "empty": "No hay flujos.",
+    "deleteConfirm": "¿Eliminar el flujo {name}?",
+    "deleted": "Flujo eliminado",
+    "saved": "Flujo {name} guardado",
+    "imported": "Flujo importado",
+    "importError": "Error de importación YAML: {error}",
+    "copied": "YAML copiado",
+    "exportTitle": "YAML del flujo",
+    "saving": "Guardando…",
+    "savedState": "Guardado",
+    "unsaved": "Los cambios se guardaron localmente",
+    "validationError": "Complete los campos resaltados",
+    "dependencyOrder": "No se puede colocar un paso antes de una dependencia",
+    "selectAgent": "Seleccione un agente",
+    "noDependencies": "No hay pasos anteriores disponibles",
+    "resourcesAtRun": "Los recursos se comprueban con el agente seleccionado al ejecutar el flujo"
+  },
   "systemInfo": {
     "title": "LLM locales",
     "subtitle": "Recursos de hardware del sistema actual",
@@ -372,7 +458,10 @@
     "installedLlama": "llama.app instalado",
     "updateLlama": "Actualizar llama.app",
     "installLlama": "Instalar llama.app",
-    "runtimeTabs": { "ollama": "Ollama", "llama": "llama.app" },
+    "runtimeTabs": {
+      "ollama": "Ollama",
+      "llama": "llama.app"
+    },
     "cpu": "Procesador",
     "memory": "Memoria del sistema",
     "gpu": "Tarjeta gráfica",
@@ -395,7 +484,10 @@
       "lb": "Binarios de llama.app",
       "lm": "Modelos de llama.app"
     },
-    "configure": { "ollama": "Ollama settings", "llama": "llama.app settings" },
+    "configure": {
+      "ollama": "Ollama settings",
+      "llama": "llama.app settings"
+    },
     "binaryPath": "Ruta del binario",
     "launchArgs": "Argumentos de inicio separados por espacios",
     "modelsPath": "Carpeta de modelos",

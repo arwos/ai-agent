@@ -21,6 +21,7 @@ import (
 	"github.com/arwos/ai-agent/internal/pkg/agent"
 	"github.com/arwos/ai-agent/internal/pkg/configstore"
 	"github.com/arwos/ai-agent/internal/pkg/dialog"
+	goalpkg "github.com/arwos/ai-agent/internal/pkg/goal"
 	"github.com/arwos/ai-agent/internal/pkg/interaction"
 	"github.com/arwos/ai-agent/internal/pkg/jobs"
 	"github.com/arwos/ai-agent/internal/pkg/knowledge"
@@ -68,6 +69,8 @@ type App struct {
 	requests       map[string]pendingRequest
 	chatMu         sync.RWMutex
 	chatJobs       map[string]*chatJob
+	childMu        sync.RWMutex
+	childRuns      map[string]childRun
 	llmMu          sync.Mutex
 	llmCancel      context.CancelFunc
 	llmRootCtx     context.Context
@@ -179,6 +182,7 @@ func NewApp(
 		pickJobs:       make(map[string]*pickJob),
 		requests:       make(map[string]pendingRequest),
 		chatJobs:       make(map[string]*chatJob),
+		childRuns:      make(map[string]childRun),
 	}
 	go func() {
 		if _, err := a.updater.Check(context.Background()); err != nil {
@@ -306,6 +310,11 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 		if input.ConvID == "" {
 			return errors.New("conversation id is required")
 		}
+		profileID, err := a.activeProfile()
+		if err != nil {
+			return err
+		}
+		a.cancelChildJobs(profileID, input.ConvID)
 		a.chatMu.RLock()
 		job := a.chatJobs[input.ConvID]
 		a.chatMu.RUnlock()
@@ -336,7 +345,9 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 		if input.Type == "goal.pause" {
 			goal.Status = "paused"
 		} else {
+			a.cancelChildJobs(profileID, input.ConvID)
 			goal.Status = "stopped"
+			goalpkg.CancelWorkflowTasks(goal)
 		}
 		goal.Approval = nil
 		if err := a.dialogs.SaveGoal(dialog.SessionKey(profileID, input.ConvID), *goal); err != nil {
@@ -406,6 +417,7 @@ func (a *App) handleWebSocketInput(ev event.Event, meta ws.Meta) error { //nolin
 
 func (a *App) Up(ctx context.Context) error {
 	logx.Info("Application main", "do", "start")
+	a.restoreChildRuns()
 	if a.store != nil && a.workspaces != nil {
 		if profile, profileErr := a.activeProfile(); profileErr == nil {
 			if saved, err := a.store.Workspaces(profile); err == nil {
@@ -549,6 +561,9 @@ func (a *App) Up(ctx context.Context) error {
 	a.wss.SetEventHandler(a.workflowDelete, EventWorkflowDelete)
 	a.wss.SetEventHandler(a.workflowImport, EventWorkflowImport)
 	a.wss.SetEventHandler(a.workflowExport, EventWorkflowExport)
+	a.wss.SetEventHandler(a.workflowPause, EventWorkflowPause)
+	a.wss.SetEventHandler(a.workflowContinue, EventWorkflowContinue)
+	a.wss.SetEventHandler(a.workflowStop, EventWorkflowStop)
 
 	// React/Vite SPA and its static assets. The not-found handler covers every
 	// client-side route while ApiIndex keeps /api/* and missing static files 404.

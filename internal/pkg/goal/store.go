@@ -25,14 +25,19 @@ type Store struct {
 }
 
 type Goal struct {
-	ID        string        `json:"id"`
-	DialogID  string        `json:"dialogId"`
-	Goal      string        `json:"goal"`
-	Status    string        `json:"status"`
-	Tasks     []GoalTask    `json:"tasks"`
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
-	Approval  *GoalApproval `json:"approval,omitempty"`
+	ID              string        `json:"id"`
+	DialogID        string        `json:"dialogId"`
+	Goal            string        `json:"goal"`
+	Request         string        `json:"request,omitempty"`
+	Status          string        `json:"status"`
+	Tasks           []GoalTask    `json:"tasks"`
+	WorkflowID      string        `json:"workflowId,omitempty"`
+	WorkflowVersion int           `json:"workflowVersion,omitempty"`
+	WorkflowHash    string        `json:"workflowHash,omitempty"`
+	CurrentTaskID   string        `json:"currentTaskId,omitempty"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	UpdatedAt       time.Time     `json:"updatedAt"`
+	Approval        *GoalApproval `json:"approval,omitempty"`
 }
 
 type GoalApproval struct {
@@ -45,19 +50,47 @@ type GoalApproval struct {
 }
 
 type GoalTask struct {
-	ID          string         `json:"id"`
-	Label       string         `json:"label"`
-	Tools       []string       `json:"tools,omitempty"`
-	DependsOn   []string       `json:"dependsOn,omitempty"`
-	Attempts    int            `json:"attempts"`
-	MaxAttempts int            `json:"maxAttempts"`
-	LastTool    string         `json:"lastTool,omitempty"`
-	Arguments   map[string]any `json:"arguments,omitempty"`
-	LastResult  string         `json:"lastResult,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	StartedAt   time.Time      `json:"startedAt,omitempty"`
-	FinishedAt  time.Time      `json:"finishedAt,omitempty"`
-	Status      string         `json:"status"`
+	ID               string          `json:"id"`
+	Label            string          `json:"label"`
+	Tools            []string        `json:"tools,omitempty"`
+	Skills           []string        `json:"skills,omitempty"`
+	DependsOn        []string        `json:"dependsOn,omitempty"`
+	Attempts         int             `json:"attempts"`
+	MaxAttempts      int             `json:"maxAttempts"`
+	LastTool         string          `json:"lastTool,omitempty"`
+	Arguments        map[string]any  `json:"arguments,omitempty"`
+	LastResult       string          `json:"lastResult,omitempty"`
+	Error            string          `json:"error,omitempty"`
+	StartedAt        time.Time       `json:"startedAt,omitempty"`
+	FinishedAt       time.Time       `json:"finishedAt,omitempty"`
+	Status           string          `json:"status"`
+	WorkflowStepID   string          `json:"workflowStepId,omitempty"`
+	WorkflowSnapshot json.RawMessage `json:"workflowSnapshot,omitempty"`
+	// Executor is retained for old persisted goals. New workflow runs use ExecutorAgentID.
+	Executor         string         `json:"executor,omitempty"`
+	ExecutorAgentID  string         `json:"executorAgentId,omitempty"`
+	ReviewerAgentID  string         `json:"reviewerAgentId,omitempty"`
+	ChildDialogID    string         `json:"childDialogId,omitempty"`
+	ReviewerDialogID string         `json:"reviewerDialogId,omitempty"`
+	ChildAgentID     string         `json:"childAgentId,omitempty"`
+	RunTokenHash     string         `json:"runTokenHash,omitempty"`
+	ExpectedResult   string         `json:"expectedResult,omitempty"`
+	ResultMetadata   map[string]any `json:"resultMetadata,omitempty"`
+	Acceptance       string         `json:"acceptance,omitempty"`
+	ReviewVerdict    string         `json:"reviewVerdict,omitempty"`
+	ReviewSummary    string         `json:"reviewSummary,omitempty"`
+	ReviewEvidence   []string       `json:"reviewEvidence,omitempty"`
+	ReviewFeedback   string         `json:"reviewFeedback,omitempty"`
+	History          []TaskAttempt  `json:"history,omitempty"`
+}
+
+type TaskAttempt struct {
+	Attempt        int      `json:"attempt"`
+	BuilderResult  string   `json:"builderResult,omitempty"`
+	ReviewVerdict  string   `json:"reviewVerdict,omitempty"`
+	ReviewSummary  string   `json:"reviewSummary,omitempty"`
+	ReviewEvidence []string `json:"reviewEvidence,omitempty"`
+	ReviewFeedback string   `json:"reviewFeedback,omitempty"`
 }
 
 func NewStore(root string) *Store { return &Store{Root: root} }

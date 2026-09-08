@@ -30,9 +30,9 @@ Secrets are write-only: provider API keys, proxy passwords, and MCP headers are 
 | 111–114 | Skill groups | `list/save/delete/assign` |
 | 115–117 | Application | `update.status`, `update.apply`, `system.info` |
 | 118–138 | Local LLM runtimes | Ollama/Llama.cpp install, settings CRUD, start, model refresh/list/pull/remove |
-| 139–144 | Workflows | `workflow.list`, `workflow.get`, `workflow.save`, `workflow.delete`, `workflow.import`, `workflow.export` |
+| 133–141 | Workflows | `workflow.list`, `workflow.get`, `workflow.save`, `workflow.delete`, `workflow.import`, `workflow.export`, `workflow.pause`, `workflow.continue`, `workflow.stop` |
 
-Workflow management uses append-only events `139–144`. Running a workflow uses `chat.send` with `mode: "workflow"` and `workflow_id`; no separate run event is used.
+Workflow management uses append-only events `133–141`. Running a workflow uses `chat.send` with `mode: "workflow"` and `workflow_id`; pause, continue, and stop use their dedicated workflow events.
 
 The historical managed-skill events at IDs 26–30 are retained for protocol compatibility. New UI code uses the current skill workflows and IDs rather than treating the compatibility entries as a separate API.
 
@@ -105,10 +105,11 @@ The intended profile-scoped builtin MCP capabilities are:
 - `agent.list` returns safe metadata only: agent ID, name, description, and an available capability summary. It never returns credentials or secrets.
 - `agent.run` accepts `agent_id`, `task`, expected results, `parent_dialog_id`, and an optional `task_id`. Ad hoc delegation may omit `task_id`; workflow execution must bind it to the current immutable goal task. The selected agent must provide every workflow-required tool and skill before a child is created. The call creates a child dialog and pending run, then immediately returns the child dialog ID and waiting status.
 - `agent.result` is child-only and accepts `{run_token, status, result, error?, artifacts?, changed_files?}`. `status` is `success` or `failed`; success requires bounded result text or declared metadata, and failure requires `error`. Artifacts are immutable IDs and metadata. Changed files are backend-validated relative paths with bounded line ranges. The callback envelope is the canonical parent result; child final text is UI/audit data only.
+- `workflow.review_result` is reviewer-child-only and accepts `{run_token, verdict, summary, evidence?, feedback?}`. `verdict` is `pass` or `fail`; `fail` requires actionable `feedback`.
 
 Delegation inherits mode restrictions. Consult children are read-only, and plan children remain read-only before approval. Children cannot call `agent.run` or user-interaction tools and must call `agent.result`; ending without it fails the pending run with a protocol error. Callback acceptance is one-time and validates the token, profile, parent dialog, child dialog, task, and completion state. The child performs its final turn after the callback, then the parent resumes with the structured callback payload and no new user message. Wrong-profile, wrong-task, duplicate, and late callbacks are explicit errors.
 
-Workflow YAML is fixed-schema data, not executable model code. It contains `version`, `id`, `name`, `description`, `enabled`, and ordered `steps`; each step may declare `substeps`, fixed input references (`user_request`, `previous_result`, `artifact_id`, `workspace_path`, or bounded `literal`), outputs, validation/review instructions, required tools and skills, `executor` (`self`, `agent_id`, or `auto`), and bounded `retry.max_attempts`. Workspace storage targets are relative paths only. `artifact.create`, `artifact.get`, and `artifact.read` use profile-scoped immutable snapshots under `datasource/workflow/<profileId>/artifacts/`; prompts carry IDs/metadata rather than implicit paths.
+Workflow YAML is fixed-schema data, not executable model code. It contains `version`, `id`, `name`, `description`, `enabled`, and ordered `steps`; every step requires a concrete `agent_id`, acceptance criteria, and `retry.max_attempts` between one and ten. It may declare substeps, dependencies, required tools, and required skills. At run start the server snapshots the definition, starts one Builder child per eligible step, then starts an isolated Reviewer child using the agent selected in chat. Builder completion requires `agent.result`; Reviewer completion requires `workflow.review_result` with a `pass` or `fail` verdict. A failed review retries the Builder until its limit, then stops the workflow. Reviewer children use consult-mode read-only tools and cannot modify the workspace. `artifact.create`, `artifact.get`, and `artifact.read` use profile-scoped immutable snapshots under `datasource/workflow/<profileId>/artifacts/`; prompts carry IDs/metadata rather than implicit paths.
 
 ## Frontend delivery
 

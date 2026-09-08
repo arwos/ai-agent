@@ -36,3 +36,22 @@ func TestExecuteRequiresApproval(t *testing.T) {
 		t.Fatalf("approved execution = %q, %v", value, err)
 	}
 }
+
+func TestConsultAllowsOnlyReadOnlyAndControlTools(t *testing.T) {
+	r := New()
+	for _, name := range []string{"agent.list", "agent.run", "agent.result", "fs.read_file"} {
+		name := name
+		if err := r.Register(Tool{Name: name, Description: name, Handler: func(context.Context, Scope, map[string]any) (any, error) { return "ok", nil }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope := Scope{Mode: "consult", Allowed: map[string]bool{"agent.list": true, "agent.run": true, "agent.result": true, "fs.read_file": true}}
+	for _, name := range []string{"agent.list", "agent.run", "agent.result", "fs.read_file"} {
+		if _, err := r.Execute(context.Background(), scope, name, nil); err != nil {
+			t.Errorf("consult tool %q rejected: %v", name, err)
+		}
+	}
+	if _, err := r.Execute(context.Background(), scope, "fs.delete_file", nil); err == nil {
+		t.Fatal("consult mode allowed a non-read-only tool")
+	}
+}
