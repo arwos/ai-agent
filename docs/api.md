@@ -79,7 +79,7 @@ Event `1` is a broadcast stream. Its payload is an object with a UUID `id`, a `t
 | `local_llm.model` | Start, completion, or error state for a local model operation. |
 | `local_llm.model_pull` | Progress/status published while downloading a local model. |
 
-Child execution may publish stream frames with the child `dialog_id`. A parent-scoped `subagent` or `bg` payload can advertise child status to the parent UI. Clients must filter both parent and child frames by dialog ID and must not treat a waiting parent as complete until its callback continuation finishes.
+Child execution may publish stream frames with the child `dialog_id`. A parent-scoped `subagent` or `bg` payload can advertise child status to the parent UI. The first `subagent` frame includes a safe `conversation` metadata object for the new child, allowing the UI to add it to the dialog tree before history hydration completes. Clients must filter both parent and child frames by dialog ID and must not treat a waiting parent as complete until its callback continuation finishes.
 
 Event `2` is the legacy stream-input frame and is handled separately from RPC event `75`. It carries `user.message`, `user.continue`, `user.stop`, `user.response`, `goal.pause`, and `goal.stop` frames. Browser code should use the shared WebSocket helpers in `web/src/lib/api.ts` rather than constructing envelopes directly.
 

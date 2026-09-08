@@ -477,6 +477,29 @@ function Shell() {
       const dialogId = String(fr.convId ?? "");
       const childDialogId = String(fr.child_dialog_id ?? "");
       if (!dialogId || !childDialogId) return;
+      const child = fr.conversation as Partial<Conversation> | undefined;
+      if (child && child.id === childDialogId) {
+        const childConversation: Conversation = {
+          id: childDialogId,
+          workspaceId: String(child.workspaceId ?? ""),
+          agentId: String(child.agentId ?? ""),
+          parentId: String(child.parentId ?? dialogId),
+          title: String(child.title ?? "New conversation"),
+          updatedAt: String(child.updatedAt ?? new Date().toISOString()),
+          activeModel: child.activeModel,
+          messages: [],
+        };
+        setConvs((items) => {
+          // Stream frames are broadcast to every open client. Add the child
+          // only when its parent belongs to the currently loaded workspace.
+          if (!items.some((item) => item.id === dialogId)) return items;
+          const index = items.findIndex((item) => item.id === childDialogId);
+          if (index < 0) return [childConversation, ...items];
+          const next = [...items];
+          next[index] = { ...next[index], ...childConversation, messages: next[index].messages };
+          return next;
+        });
+      }
       const refreshConversation = async (id: string) => {
         const conversation = await wsRequest<Conversation | null>(WS_EVENT_CONVERSATION_GET, { id, limit: HISTORY_PAGE_SIZE });
         if (!conversation) return;

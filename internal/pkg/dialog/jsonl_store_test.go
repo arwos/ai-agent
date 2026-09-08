@@ -95,6 +95,24 @@ func TestConversationMetadataUsesChildDirectory(t *testing.T) {
 	}
 }
 
+func TestProfileConversationsPrefersNestedChildOverRootDuplicate(t *testing.T) {
+	store := NewStore(t.TempDir())
+	child := models.Conversation{ID: "child", ProfileID: "profile", WorkspaceID: "workspace", ParentID: "parent", Title: "Nested child"}
+	if _, err := store.SaveConversation(child); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveConversation(models.Conversation{ID: child.ID, ProfileID: child.ProfileID, WorkspaceID: child.WorkspaceID, Title: "Root duplicate"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.ProfileConversations(child.ProfileID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("conversations=%#v err=%v", items, err)
+	}
+	if items[0].ParentID != child.ParentID || items[0].Title != child.Title {
+		t.Fatalf("root duplicate won over nested child: %#v", items[0])
+	}
+}
+
 func TestHistoryIndexAndPage(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "dialogs")
 	s := &Store{Root: root}

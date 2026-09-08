@@ -55,7 +55,7 @@ func (s *Store) Conversation(profileID, id string) (models.Conversation, error) 
 }
 
 func (s *Store) ProfileConversations(profileID string) ([]models.Conversation, error) {
-	out := []models.Conversation{}
+	byID := make(map[string]models.Conversation)
 	err := filepath.WalkDir(filepath.Join(s.Root, profileID), func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || entry.Name() != conversationMetaFile {
 			return err
@@ -66,15 +66,25 @@ func (s *Store) ProfileConversations(profileID string) ([]models.Conversation, e
 		}
 		var item models.Conversation
 		if json.Unmarshal(b, &item) == nil && item.ProfileID == profileID && item.ID != "" {
-			out = append(out, item)
+			existing, found := byID[item.ID]
+			// Earlier versions could write a child both in its nested directory
+			// and at the profile root. The nested metadata carries parentId and
+			// is authoritative; keep the root file untouched for manual cleanup.
+			if !found || (existing.ParentID == "" && item.ParentID != "") || (existing.ParentID == item.ParentID && item.UpdatedAt > existing.UpdatedAt) {
+				byID[item.ID] = item
+			}
 		}
 		return nil
 	})
 	if os.IsNotExist(err) {
-		return out, nil
+		return []models.Conversation{}, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	out := make([]models.Conversation, 0, len(byID))
+	for _, item := range byID {
+		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out, nil

@@ -228,7 +228,8 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 	if err != nil {
 		return nil, err
 	}
-	if _, err = a.dialogs.SaveConversation(models.Conversation{ID: childID, ProfileID: profileID, WorkspaceID: workspaceID, AgentID: agentID, ParentID: parentID, Title: goalTitle(task)}); err != nil {
+	childConversation, err := a.dialogs.SaveConversation(models.Conversation{ID: childID, ProfileID: profileID, WorkspaceID: workspaceID, AgentID: agentID, ParentID: parentID, Title: goalTitle(task)})
+	if err != nil {
 		return nil, err
 	}
 	for i := range parentGoal.Tasks {
@@ -266,7 +267,7 @@ func (a *App) startChildRun(ctx context.Context, profileID, parentID, workspaceI
 		a.childMu.Unlock()
 		return nil, err
 	}
-	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": parentID, "child_dialog_id": childID, "task_id": taskID, "status": childStatus}})
+	a.publish(StreamMessage{Type: "subagent", Payload: map[string]any{"dialog_id": parentID, "child_dialog_id": childID, "task_id": taskID, "status": childStatus, "conversation": childConversation}})
 	resultTool := "agent.result"
 	if role == childRoleReviewer {
 		resultTool = "workflow.review_result"
